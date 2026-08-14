@@ -11,7 +11,7 @@
  * issues the invoice and files the GST.
  */
 
-import Decimal from "decimal.js";
+import { Decimal } from "decimal.js";
 
 import {
   ZERO,

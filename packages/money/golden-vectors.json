@@ -35,25 +35,36 @@
   },
 
   "allocate": {
-    "$comment": "The sum of the parts must equal the whole, exactly. A maintenance split that does not reconcile against the society's bank statement destroys trust in month one.",
+    "$comment": [
+      "The sum of the parts must equal the whole, exactly. A maintenance split that",
+      "does not reconcile against the society's bank statement destroys trust in",
+      "month one.",
+      "",
+      "TIE-BREAK RULE, which any implementation must follow to match: the rounding",
+      "remainder is applied one paisa at a time, ordered by fractional loss (largest",
+      "loss corrected first when adding, smallest first when deducting). When losses",
+      "are equal — which is every equal-weight split — ties resolve by ASCENDING",
+      "INDEX, so the earliest share is adjusted first. Without this rule stated, two",
+      "correct implementations would disagree on which flat gets the extra paisa."
+    ],
     "cases": [
       {
-        "name": "classic 33.33 x3 remainder",
+        "name": "classic 33.33 x3 remainder — extra paisa to the first share",
         "total": "100.00",
         "weights": ["1", "1", "1"],
         "expected": ["33.34", "33.33", "33.33"]
       },
       {
-        "name": "per-sq-ft split across three flats",
+        "name": "per-sq-ft split that needs no adjustment at all",
         "total": "1000.00",
         "weights": ["1150", "980", "1340"],
-        "expected": ["330.94", "281.99", "385.63"]
+        "expected": ["331.41", "282.42", "386.17"]
       },
       {
-        "name": "fewer paise than shares",
+        "name": "fewer paise than shares — deduction taken from the first share",
         "total": "0.05",
         "weights": ["1", "1", "1", "1", "1", "1"],
-        "expected": ["0.01", "0.01", "0.01", "0.01", "0.01", "0.00"]
+        "expected": ["0.00", "0.01", "0.01", "0.01", "0.01", "0.01"]
       },
       {
         "name": "two unequal shares",

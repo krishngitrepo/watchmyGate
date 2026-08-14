@@ -21,7 +21,7 @@
  * quantised.
  */
 
-import Decimal from "decimal.js";
+import { Decimal } from "decimal.js";
 
 // Half-up, and enough precision that per-sq-ft maths on a 5,000-unit society never
 // silently truncates.
@@ -118,6 +118,13 @@ export function applyRate(base: Money, ratePercent: string | Decimal): Money {
  * That exactness is what makes a per-sq-ft maintenance run reconcile against the
  * society's bank statement — and a bill that does not reconcile in month one destroys
  * the committee's trust permanently.
+ *
+ * **Tie-break, which the Dart implementation must match:** ordering is by fractional
+ * loss, but every equal-weight split produces equal losses. Ties resolve by *ascending
+ * index* — `Array.prototype.sort` is stable, so the earliest share is adjusted first.
+ * Stating this matters: without it two correct implementations would still disagree
+ * about which flat receives the extra paisa, and the golden vectors would fail for a
+ * reason that looks like a bug but is not.
  */
 export function allocate(total: Money, weights: Decimal[]): Money[] {
   if (weights.length === 0) {

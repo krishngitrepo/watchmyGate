@@ -13,7 +13,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import Decimal from "decimal.js";
+import { Decimal } from "decimal.js";
 import { describe, expect, it } from "vitest";
 
 import {
