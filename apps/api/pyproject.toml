@@ -1,0 +1,78 @@
+[project]
+name = "watchmygate-api"
+version = "0.1.0"
+description = "WatchMyGate API — gated community management platform"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30.0",
+    "alembic>=1.14.0",
+    "python-jose[cryptography]>=3.3.0",
+    "argon2-cffi>=23.1.0",
+    "cryptography>=43.0.0",
+    "httpx>=0.27.0",
+    "structlog>=24.4.0",
+    "orjson>=3.10.0",
+    "phonenumbers>=8.13.0",
+    "uuid-utils>=0.10.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "httpx>=0.27.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Session scope for both, so the session-scoped seed fixture and the tests that
+# depend on it share one event loop. Mismatched scopes close the loop under the
+# connection pool and surface as "Event loop is closed" during teardown.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "isolation: cross-tenant leak tests — these are a required build gate",
+    "ledger: double-entry invariant tests",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF"]
+# `from sqlalchemy.dialects.postgresql import UUID as PgUUID` is the universal
+# SQLAlchemy idiom, needed to avoid shadowing the stdlib uuid.UUID.
+ignore = ["N811"]
+
+# Tenant isolation depends on every query running through tenant_context.
+# These bans make an escape a build failure rather than a silent data leak.
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"app.common.db.engine".msg = "Use app.common.tenancy.tenant_context — raw engine access bypasses RLS scoping."
+"app.common.db.session_factory".msg = "Use app.common.tenancy.tenant_context — raw sessions bypass RLS scoping."
+
+[tool.ruff.lint.per-file-ignores]
+"app/common/tenancy/*" = ["TID251"]   # the wrapper itself must touch the engine
+"app/common/db.py" = ["TID251"]
+"tests/*" = ["TID251"]                # isolation tests deliberately probe raw access
+"alembic/*" = ["TID251", "N999"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["jose.*", "uuid_utils.*"]
+ignore_missing_imports = true

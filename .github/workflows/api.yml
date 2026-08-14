@@ -1,0 +1,94 @@
+name: API
+
+on:
+  push:
+    branches: [main]
+    paths: ["apps/api/**", ".github/workflows/api.yml"]
+  pull_request:
+    paths: ["apps/api/**", ".github/workflows/api.yml"]
+
+concurrency:
+  group: api-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: watchmygate
+          POSTGRES_PASSWORD: localdev
+          POSTGRES_DB: watchmygate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U watchmygate"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+
+    env:
+      ENVIRONMENT: local
+      # CI connects directly rather than through PgBouncer. tenant_context wraps every
+      # query in an explicit transaction regardless, so SET LOCAL behaves identically.
+      DATABASE_URL: postgresql+asyncpg://watchmygate_app:localdev_app@localhost:5432/watchmygate
+      DATABASE_MIGRATION_URL: postgresql+asyncpg://watchmygate:localdev@localhost:5432/watchmygate
+      JWT_SECRET: ci-only-not-a-real-secret
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Type check
+        run: uv run mypy app
+
+      - name: Run migrations
+        run: uv run alembic upgrade head
+
+      # Isolation runs as its own step so a leak is unmistakable in the run summary
+      # rather than buried among unrelated failures.
+      - name: Tenant isolation (build gate)
+        run: uv run pytest -m isolation -v
+
+      - name: Full test suite
+        run: uv run pytest --cov=app --cov-report=term-missing
+
+  security:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+
+      - name: Dependency vulnerability scan
+        run: uvx pip-audit --strict || true   # advisory until the lockfile settles
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
