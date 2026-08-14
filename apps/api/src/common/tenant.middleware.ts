@@ -20,6 +20,32 @@ const PUBLIC_PATHS = [
 const SOCIETY_OPTIONAL_PATHS = ["/v1/auth/me/memberships", "/v1/auth/logout"];
 
 /**
+ * The request's full path, independent of where the middleware is mounted.
+ *
+ * `req.path` is NOT usable here. Nest applies `forRoutes("*")` by mounting the
+ * middleware per route, so Express reports `baseUrl = "/healthz"` and `path = "/"` —
+ * meaning `req.path` is `"/"` for *every* request and matches nothing.
+ *
+ * That is not a cosmetic bug. It made every entry in PUBLIC_PATHS unreachable, so
+ * `/v1/auth/otp/request` demanded the very token it exists to issue: login was
+ * impossible and the whole API was inaccessible. It returned 401 rather than erroring,
+ * which is exactly why it survived a reading of the code and was only caught by
+ * actually calling the endpoint.
+ *
+ * `originalUrl` is always the full path as received, so it is what we match on.
+ */
+export function requestPath(req: {
+  originalUrl?: string | undefined;
+  url?: string | undefined;
+}): string {
+  const raw = req.originalUrl ?? req.url ?? "/";
+  const withoutQuery = raw.split("?")[0] ?? "/";
+  // Treat /healthz and /healthz/ as the same route; keep "/" itself intact.
+  const trimmed = withoutQuery.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
+
+/**
  * Establishes the request's identity and tenant scope.
  *
  * Every handler downstream runs inside an AsyncLocalStorage context, so it cannot
@@ -31,7 +57,7 @@ export class TenantMiddleware implements NestMiddleware {
   constructor(private readonly auth: AuthService) {}
 
   async use(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const path = req.path;
+    const path = requestPath(req);
     const requestId = (req.headers["x-request-id"] as string) ?? randomUUID();
     res.setHeader("x-request-id", requestId);
 

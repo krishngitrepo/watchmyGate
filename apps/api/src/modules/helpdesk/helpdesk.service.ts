@@ -32,13 +32,15 @@ const STOPWORDS = new Set([
 export interface RaiseComplaintInput {
   categoryId: string;
   title: string;
-  description?: string;
+  // `| undefined` throughout: tsconfig sets exactOptionalPropertyTypes, so an optional
+  // property and a property that may hold undefined are different types.
+  description?: string | undefined;
   locationType: "unit" | "tower" | "floor" | "amenity" | "common";
-  unitId?: string;
-  locationRef?: string;
-  locationNote?: string;
-  priority?: "low" | "normal" | "high" | "urgent";
-  voiceTranscriptLanguage?: string;
+  unitId?: string | undefined;
+  locationRef?: string | undefined;
+  locationNote?: string | undefined;
+  priority?: "low" | "normal" | "high" | "urgent" | undefined;
+  voiceTranscriptLanguage?: string | undefined;
 }
 
 @Injectable()
@@ -147,7 +149,9 @@ export class HelpdeskService {
     return tx(async (db) => {
       const ticket = await this.getTicket(db, ticketId);
 
-      const [{ count }] = await db
+      // count(*) always returns a row, but noUncheckedIndexedAccess cannot know that,
+      // so the fallback is stated rather than asserted away with a non-null assertion.
+      const [countRow] = await db
         .select({ count: sql<string>`count(*)` })
         .from(schema.attachments)
         .where(
@@ -158,7 +162,7 @@ export class HelpdeskService {
           ),
         );
 
-      if (Number(count) >= MAX_ATTACHMENTS) {
+      if (Number(countRow?.count ?? 0) >= MAX_ATTACHMENTS) {
         throw new ValidationError(
           `A complaint can carry at most ${MAX_ATTACHMENTS} attachments.`,
         );
@@ -216,7 +220,7 @@ export class HelpdeskService {
       const patch: Record<string, unknown> = { status: newStatus };
 
       if (newStatus === "resolved") {
-        const [{ count }] = await db
+        const [proofRow] = await db
           .select({ count: sql<string>`count(*)` })
           .from(schema.attachments)
           .where(
@@ -227,7 +231,9 @@ export class HelpdeskService {
             ),
           );
 
-        if (Number(count) === 0) {
+        // No proof photo means not resolved. The resident has to be able to see that
+        // the light actually works now, not just read that someone says it does.
+        if (Number(proofRow?.count ?? 0) === 0) {
           throw new ValidationError(
             "Attach a photo showing the completed repair before marking this resolved.",
           );

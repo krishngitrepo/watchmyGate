@@ -9,7 +9,10 @@
 
 import { Injectable } from "@nestjs/common";
 import { and, eq, isNull, sql } from "drizzle-orm";
-import Decimal from "decimal.js";
+// Named import, not default: under NodeNext the default export of decimal.js resolves
+// to the module namespace, which typechecks as non-constructible. `new Decimal(...)`
+// then fails at build time even though the tests pass.
+import { Decimal } from "decimal.js";
 
 import { schema, type TenantTx } from "@watchmygate/db";
 import {
@@ -36,10 +39,13 @@ export interface PreviewInput {
   periodStart: string;
   periodEnd: string;
   dueDate: string;
+  // `| undefined` is explicit because tsconfig sets exactOptionalPropertyTypes.
+  // Without it, `{ meterReadings: undefined }` is a type error at every call site that
+  // spreads a parsed request body — which is all of them.
   /** Meter readings for this period, keyed by charge-type code. */
-  meterReadings?: Record<string, string>;
+  meterReadings?: Record<string, string> | undefined;
   /** Manual amounts for `manual` charge types, keyed by code. */
-  manualAmounts?: Record<string, string>;
+  manualAmounts?: Record<string, string> | undefined;
 }
 
 export interface PreviewResult {

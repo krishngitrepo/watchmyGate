@@ -1,5 +1,7 @@
 import "reflect-metadata";
 
+import { createRequire } from "node:module";
+
 import { NestFactory } from "@nestjs/core";
 import pino from "pino";
 
@@ -11,11 +13,28 @@ import { AppExceptionFilter } from "./common/exception.filter.js";
 
 const config = loadConfig();
 
+/**
+ * Human-readable logs in development, JSON in production.
+ *
+ * `pino-pretty` is a dev convenience and an optional dependency, so its absence must
+ * never stop the service booting — pino throws at construction if the transport target
+ * cannot be resolved, which would turn a missing log formatter into an outage.
+ */
+function prettyTransport(): pino.LoggerOptions {
+  if (config.isProduction) return {};
+  try {
+    // This module is ESM, so `require` is not in scope — createRequire gives us the
+    // resolver without pulling in a CommonJS loader for anything else.
+    createRequire(import.meta.url).resolve("pino-pretty");
+    return { transport: { target: "pino-pretty", options: { colorize: true } } };
+  } catch {
+    return {};
+  }
+}
+
 export const logger = pino({
   level: config.LOG_LEVEL,
-  ...(config.isProduction
-    ? {}
-    : { transport: { target: "pino-pretty", options: { colorize: true } } }),
+  ...prettyTransport(),
   // Belt and braces: even if a secret reaches a log call, it is redacted on the way out.
   redact: {
     paths: [
