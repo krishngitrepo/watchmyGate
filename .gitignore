@@ -6,6 +6,12 @@
 *-service-account*.json
 credentials.json
 
+# Krishna keeps live credentials here while the real secret manager is not yet wired.
+# This must never be committed — it holds the production Neon password.
+design/keys.md
+**/keys.md
+secrets/
+
 # Python
 __pycache__/
 *.py[cod]

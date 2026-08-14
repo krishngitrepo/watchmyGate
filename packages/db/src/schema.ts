@@ -15,6 +15,7 @@ import {
   char,
   date,
   index,
+  inet,
   integer,
   jsonb,
   numeric,
@@ -338,7 +339,7 @@ export const otpChallenges = pgTable(
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     attempts: integer("attempts").notNull().default(0),
     consumedAt: timestamp("consumed_at", { withTimezone: true }),
-    requestIp: varchar("request_ip", { length: 45 }),
+    requestIp: inet("request_ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ix_otp_phone_active").on(t.phone, t.expiresAt)],
@@ -364,7 +365,7 @@ export const sessions = pgTable(
     revokedAt: timestamp("revoked_at", { withTimezone: true }),
     rotatedTo: uuid("rotated_to"),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
-    ip: varchar("ip", { length: 45 }),
+    ip: inet("ip"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ix_session_person").on(t.personId)],
@@ -1017,7 +1018,7 @@ export const auditLog = pgTable("audit_log", {
   after: jsonb("after"),
   /** Required for sensitive reads — credential access, CCTV, attachment downloads. */
   reason: varchar("reason", { length: 500 }),
-  ip: varchar("ip", { length: 45 }),
+  ip: inet("ip"),
   userAgent: varchar("user_agent", { length: 400 }),
 });
 
@@ -1035,7 +1036,7 @@ export const consents = pgTable("consents", {
   grantedAt: timestamp("granted_at", { withTimezone: true }),
   withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
   source: varchar("source", { length: 16 }).notNull().default("app"),
-  ip: varchar("ip", { length: 45 }),
+  ip: inet("ip"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -1053,4 +1054,53 @@ export const deviceTokens = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index("ix_device_person").on(t.personId)],
+);
+
+// ------------------------------------------------------------ amenities
+
+export const amenities = pgTable(
+  "amenities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    name: varchar("name", { length: 120 }).notNull(),
+    capacity: integer("capacity"),
+    slotMinutes: integer("slot_minutes").notNull().default(60),
+    isPaid: boolean("is_paid").notNull().default(false),
+    rate: money("rate").notNull().default("0"),
+    rules: jsonb("rules"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_amenity_society_name").on(t.societyId, t.name)],
+);
+
+/**
+ * Booking conflicts are prevented by an `EXCLUDE USING gist` constraint in migration
+ * 0002, which Drizzle cannot express — so it lives in SQL and is verified by test
+ * rather than declared here.
+ *
+ * That constraint is the whole point: an application-level "is this slot free?" check
+ * races under concurrency and eventually double-books the party hall on a Saturday.
+ */
+export const amenityBookings = pgTable(
+  "amenity_bookings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    amenityId: uuid("amenity_id")
+      .notNull()
+      .references(() => amenities.id),
+    unitId: uuid("unit_id").notNull(),
+    bookedBy: uuid("booked_by").notNull(),
+    startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+    endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+    status: varchar("status", { length: 16 }).notNull().default("confirmed"),
+    invoiceId: uuid("invoice_id"),
+    ...timestamps,
+  },
+  (t) => [index("ix_booking_amenity").on(t.societyId, t.amenityId, t.startsAt)],
 );

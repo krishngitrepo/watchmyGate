@@ -216,12 +216,22 @@ END $$;
 
 -- --------------------------------------------------------- application role
 -- NOBYPASSRLS and no table ownership: structurally unable to cross tenants.
--- The password is a placeholder — set the real one in Neon and put the connection
--- string in Secret Manager.
+--
+-- Created NOLOGIN and with NO PASSWORD on purpose. A password does not belong in a
+-- committed migration, not even a placeholder one — placeholders get run as-is and
+-- become real credentials. `migrate.ts` grants LOGIN and sets the password from
+-- APP_DB_PASSWORD afterwards, so the secret only ever exists in the environment.
+--
+-- Until that step runs the role exists but cannot connect, which is the safe order.
+--
+-- On Neon this matters more than on vanilla Postgres: neondb_owner carries BYPASSRLS,
+-- which overrides even FORCE ROW LEVEL SECURITY. The owner role can therefore read
+-- every society. This separate role is what makes isolation real rather than nominal —
+-- pointing DATABASE_URL at the owner would silently void it.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'watchmygate_app') THEN
-    CREATE ROLE watchmygate_app LOGIN PASSWORD 'PLACEHOLDER_CHANGE_ME' NOBYPASSRLS;
+    CREATE ROLE watchmygate_app NOLOGIN NOBYPASSRLS;
   ELSE
     ALTER ROLE watchmygate_app NOBYPASSRLS;
   END IF;

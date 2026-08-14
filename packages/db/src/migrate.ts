@@ -73,8 +73,55 @@ async function main(): Promise<void> {
     }
   }
 
+  await provisionAppRole(client);
+
   await client.end();
   console.info("migrations up to date");
+}
+
+/**
+ * Give the application role its login credential.
+ *
+ * Migration 0001 creates `watchmygate_app` NOLOGIN with no password, because a secret
+ * in a committed .sql file is a secret that eventually ships. The password lives only
+ * in the environment and is applied here.
+ *
+ * Idempotent: re-running rotates the password to whatever APP_DB_PASSWORD currently
+ * holds, which is also how a rotation is performed.
+ */
+async function provisionAppRole(client: pg.Client): Promise<void> {
+  const password = process.env.APP_DB_PASSWORD;
+  if (!password) {
+    console.warn(
+      "APP_DB_PASSWORD not set — watchmygate_app stays NOLOGIN and the API cannot " +
+        "connect. Set it and re-run to provision the application role.",
+    );
+    return;
+  }
+  if (password.includes("PLACEHOLDER") || password.length < 16) {
+    throw new Error(
+      "APP_DB_PASSWORD is a placeholder or too short. This role guards tenant " +
+        "isolation — give it a real, generated password of at least 16 characters.",
+    );
+  }
+
+  // Identifier is a literal, so only the password is parameterised — and ALTER ROLE
+  // does not accept bind parameters, hence the explicit quoting of the literal.
+  await client.query(
+    `ALTER ROLE watchmygate_app LOGIN PASSWORD ${client.escapeLiteral(password)}`,
+  );
+
+  // Belt and braces: assert the attribute the whole isolation model depends on.
+  const { rows } = await client.query<{ rolbypassrls: boolean; rolcanlogin: boolean }>(
+    "SELECT rolbypassrls, rolcanlogin FROM pg_roles WHERE rolname = 'watchmygate_app'",
+  );
+  if (rows[0]?.rolbypassrls) {
+    throw new Error(
+      "watchmygate_app has BYPASSRLS. Every society's data is readable through it. " +
+        "Refusing to continue.",
+    );
+  }
+  console.info("application role provisioned (LOGIN, NOBYPASSRLS)");
 }
 
 main().catch((error: unknown) => {
