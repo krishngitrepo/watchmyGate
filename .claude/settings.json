@@ -1,0 +1,94 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions",
+    "allow": [
+      "Bash",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(echo:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(cp:*)",
+      "Bash(mv:*)",
+      "Bash(touch:*)",
+      "Bash(sleep:*)",
+      "Bash(for:*)",
+      "Bash(seq:*)",
+      "Bash(true:*)",
+      "Bash(test:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(sort:*)",
+      "Bash(tee:*)",
+      "Bash(xargs:*)",
+      "Bash(./.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(python:*)",
+      "Bash(python3:*)",
+      "Bash(py:*)",
+      "Bash(pip:*)",
+      "Bash(pytest:*)",
+      "Bash(alembic:*)",
+      "Bash(uvicorn:*)",
+      "Bash(npm:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(pnpm:*)",
+      "Bash(yarn:*)",
+      "Bash(curl:*)",
+      "Bash(flutter:*)",
+      "Bash(dart:*)",
+      "Bash(git:*)",
+      "Bash(gh:*)",
+      "Bash(docker:*)",
+      "Bash(docker-compose:*)",
+      "Bash(make:*)",
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "Glob",
+      "Grep",
+      "NotebookRead",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch",
+      "TodoRead",
+      "TodoWrite",
+      "Monitor",
+      "TaskStop",
+      "TaskOutput",
+      "ToolSearch",
+      "Agent",
+      "SendMessage",
+      "PushNotification",
+      "Skill",
+      "AskUserQuestion"
+    ],
+    "deny": [
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(git push --force*)",
+      "Bash(git push -f*)",
+      "Bash(git reset --hard*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "CMD=$(cat | grep -o '\"command\"[^,}]*' | sed -E 's/.*\"command\"[[:space:]]*:[[:space:]]*\"(.*)\"/\\1/'); case \"$CMD\" in *search*|*find*|*lookup*) [ -f graphify-out/graph.json ] && echo '{\"hookSpecificOutput\":{\"hookEventName\":\"PreToolUse\",\"additionalContext\":\"A local knowledge graph is available at graphify-out/. For focused questions, query it directly instead of searching raw files. Read the summary report only when broad context is needed.\"}}' || true ;; esac"
+          }
+        ]
+      }
+    ]
+  }
+}

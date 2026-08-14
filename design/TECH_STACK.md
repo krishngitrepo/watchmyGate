@@ -1,144 +1,173 @@
 # WatchMyGate — Tech Stack
 
-Status: **decided**. Last updated 13 Aug 2026.
+Status: **decided**. Last updated 14 Aug 2026.
 
-Three languages, deliberately: **Python** for the backend, **TypeScript** for the two admin
-websites, **Dart** for mobile and desktop. The API is plain HTTP, so one backend serves every
-client surface.
+## The organising principle
 
-Two Cloud Run services for the backend — **API** and **worker** — plus the Next.js console.
+**TypeScript owns money. Python owns machines and models.**
+
+Everything touching a financial transaction — billing, the ledger, payments, invoices —
+is TypeScript, because the billing calculator must produce byte-identical results in
+the browser, on the server and in the desktop app. TypeScript is the only language that
+runs in all three, so the calculator is written once and imported everywhere.
+
+Python is used only where it is genuinely better: generative AI, OCR, computer vision,
+and talking to physical hardware (cameras, ANPR, RFID readers, boom barriers). It is a
+**separate service that never touches the database** — it calls the TypeScript API like
+any other client.
+
+That boundary is the whole design. One writer for money, one audit path, one set of
+tenant-isolation plumbing.
 
 ---
 
-## Client apps
+## Services
 
-| What | Tech | Notes |
+| Service | Language | Responsibility |
 |---|---|---|
-| Resident app | **Flutter / Dart** | Android + iOS, one codebase |
-| Guard app | **Flutter / Dart**, separate binary | Society-owned shared devices — different security posture, must not retain resident data past a shift |
-| Desktop (when needed) | **Flutter Desktop** | Windows/macOS from the same Dart code |
-| Society admin console | **Next.js 15** (TypeScript, App Router) | Route group `/society` |
-| Super admin console | **Next.js 15** | Route group `/super` — same deployable |
+| `apps/api` | **TypeScript** (NestJS) | Auth, societies, units, helpdesk, gate records, **billing, ledger, payments**. Owns the database. |
+| `apps/worker` | **TypeScript** | Cloud Tasks + Scheduler handlers: approval-ladder timers, billing runs, SLA sweeps, notification fan-out |
+| `apps/ai-service` | **Python** (FastAPI) | GenAI, OCR, voice transcription, ANPR/camera, gate hardware. **No database access** — calls `apps/api` |
+| `apps/web-admin` | **TypeScript** (Next.js 15, static export) | Society and super-admin consoles |
+| `apps/desktop` | **Tauri** (Rust shell) | Wraps the same Next.js admin build as a native desktop app |
+| `apps/mobile-resident` | **Dart** (Flutter) | Resident app |
+| `apps/mobile-guard` | **Dart** (Flutter) | Guard app, offline-first |
 
-## Backend
+---
 
-| What | Tech | Notes |
+## The money package — why this stack exists
+
+`packages/money` is TypeScript, imported unchanged by the API, the worker, the Next.js
+admin and the Tauri desktop build. GST slabs, per-sq-ft and per-BHK formulas, sinking
+fund, late-fee interest and rounding all live there once. The total a resident sees, the
+total an accountant edits, and the total filed for GST are produced by the same code.
+
+**TypeScript has no native decimal, and that is the one real hazard here.** JavaScript
+`Number` is a binary float — `0.1 + 0.2 !== 0.3`. Sharing a calculator that uses floats
+would guarantee both sides are wrong *identically*, which is worse than them
+disagreeing, because nothing would ever flag it.
+
+So, non-negotiably:
+
+- All money is **`decimal.js`**, never `number`.
+- Currency values use a branded type so a raw `number` cannot be passed by accident.
+- A lint rule bans `+ - * /` on any currency-typed value; arithmetic goes through the
+  package's functions.
+- Postgres columns are `numeric(18,4)`; the driver maps them to `Decimal`, never float.
+- Rounding is **half-up** at two decimals for anything invoiced — Indian statutory
+  invoicing expects it, and a committee checking against a spreadsheet treats banker's
+  rounding as a bug.
+
+**Flutter cannot import the package**, so it is held honest by test rather than trust:
+`packages/money/golden-vectors.json` pairs inputs with expected outputs across every GST
+slab, formula, late-fee accrual and rounding edge, and is executed by the TypeScript
+suite *and* the Dart suite. Neither can drift without a red build.
+
+---
+
+## Backend detail
+
+| Concern | Choice | Why |
 |---|---|---|
-| API | **FastAPI, Python 3.12** | Modular monolith, not microservices |
-| Background workers | **FastAPI / Python**, separate Cloud Run service | Approval-ladder timers, billing runs, SLA sweeps, notification fan-out |
-| Dependencies | **uv** | Isolated venv, no global installs |
-| Money arithmetic | **`decimal.Decimal`**, server-side only | Clients never compute money |
+| Framework | **NestJS** | Module boundaries enforced natively, matching the modular-monolith design |
+| ORM | **Drizzle** | SQL-first with real TypeScript types; raw SQL inside transactions is first-class, which the RLS scoping needs |
+| Migrations | **Drizzle Kit**, plain SQL files | The RLS policies and grants are already written and verified as SQL; keeping them as SQL preserves that work |
+| Money type | **decimal.js** | See above |
+| Validation | **Zod** | Runtime validation that generates the TypeScript types, so the API contract has one source |
+| Logging | **Pino** | Structured JSON, fast |
+| Tests | **Vitest** | |
+| Lint / format | **ESLint + Prettier**, with the money arithmetic rule | |
 
-## Database
+## Python service detail
 
-| What | Tech | Notes |
+| Concern | Choice |
+|---|---|
+| Framework | **FastAPI**, Python 3.12, `uv`-managed venv |
+| Purpose | Claude API calls (OCR of bank statements, meter readings, staff IDs; voice complaint transcription), ANPR/camera integration, RFID and boom-barrier drivers |
+| Database | **None.** Reads and writes go through `apps/api` over HTTP with a service token |
+| Auth | Service-to-service token, scoped to the endpoints it needs |
+
+Keeping it stateless means the AI and device work can crash, restart or scale
+independently without any risk to financial data.
+
+---
+
+## Data
+
+| Layer | Choice | Notes |
 |---|---|---|
-| Primary DB | **Neon Postgres 16**, Singapore | Autosuspend **disabled** (paid tier) — otherwise the first gate entry each morning waits for the DB to wake |
-| Tenant isolation | **Postgres Row-Level Security** | `SET LOCAL app.society_id` inside every transaction |
-| Migrations | **Alembic** | |
-| Money columns | `numeric(18,4)` | Never float |
+| Database | **Neon Postgres 16, Singapore** | Autosuspend **disabled** — otherwise the first gate entry each morning waits for the DB to wake |
+| Tenant isolation | **Row-Level Security**, `NOBYPASSRLS` app role | Unscoped queries return zero rows, never everything |
+| Money columns | `numeric(18,4)` | |
 
-**Build rule.** Neon pools in PgBouncer *transaction* mode, so session state does not survive between
-queries. Every query must run inside an explicit transaction via a single `tenant_context` async
-context manager that opens the transaction and sets the GUC. Raw pool queries are banned by lint — a
-query that escapes the wrapper silently loses tenant scoping.
+**Build rule.** Neon pools in transaction mode, so session state does not survive
+between queries. Every query runs inside an explicit transaction that first sets
+`app.society_id`. One helper does this; raw pool access is banned by lint. A query that
+escapes it silently loses tenant scoping.
+
+---
 
 ## Infrastructure
 
-| What | Tech | Notes |
-|---|---|---|
-| Runtime | **Google Cloud Run**, `asia-southeast1` (Singapore) | Co-located with Neon; min-instances ≥ 2 on API |
-| Scheduled callbacks | **Cloud Tasks** | Drives the 20s/45s/90s approval ladder |
-| Cron | **Cloud Scheduler** | Billing runs, SLA sweeps, invariant checks |
-| Secrets | **Google Secret Manager** | Never in code |
-| IaC | **Terraform** | From day 1 |
-| CI/CD | **GitHub Actions** | Migrations gated, blue-green deploys |
+| Layer | Choice |
+|---|---|
+| Runtime | **Google Cloud Run**, `asia-southeast1` (co-located with Neon), min 2 warm instances on the API |
+| Jobs & timers | **Cloud Tasks** (approval ladder) + **Cloud Scheduler** (billing runs, SLA sweeps) |
+| Secrets | **Google Secret Manager** |
+| Storage | **Cloudflare R2** — private bucket, per-society prefix, short-lived signed URLs |
+| IaC | **Terraform** |
+| CI/CD | **GitHub Actions**, migrations gated, tenant-isolation tests a required check |
 
-**Region note.** Neon has no India region, so compute is co-located with it in Singapore. The
-configuration to never build is Cloud Run in Mumbai with Neon in Singapore — every query would cross
-the sea. Kept together the cost is ~40–60 ms once per request, which fits the 800 ms gate budget.
+## External services
 
-## Storage
-
-| What | Tech | Notes |
-|---|---|---|
-| Photos & documents | **Cloudflare R2** | Private bucket, per-society prefix, links expire in minutes. Zero egress — critical at ~2M gate photos/day |
-
-## Auth & security
-
-| What | Tech | Notes |
-|---|---|---|
-| Login | **Phone OTP via MSG91** | Custom — one person can be resident in society A and MC in society B |
-| Sessions | Short-lived JWT + rotating refresh token | Device binding on the guard app |
-| 2FA | **TOTP**, mandatory | Accountant, admin, super-admin roles |
-| Encryption | TLS 1.3 in transit, AES-256 at rest | |
-
-## Payments
-
-| What | Tech | Notes |
-|---|---|---|
-| Mode 1 — platform-managed | **Razorpay Route** | Split settlement direct to each society's bank. Keeps us out of RBI payment-aggregator licensing |
-| Mode 1 — virtual accounts | **Razorpay Smart Collect** | Per-unit account numbers, auto-reconciles NEFT/IMPS/UPI |
-| Mode 2 — direct merchant | **Bring-your-own merchant ID** | Owner/society's own gateway account, zero platform commission. See `PAYMENTS.md` |
-
-## Messaging
-
-| What | Tech | Notes |
-|---|---|---|
-| Push | **FCM + APNs** | The visitor-approval flow depends on this |
-| SMS | **MSG91** | DLT-registered headers and templates |
-| Voice / IVR | **Exotel** | The 20-second rung of the approval ladder |
-| WhatsApp | **WhatsApp Business API** (Meta) | Notices, dues reminders — pre-approved templates |
-| Email | **Resend or SES** | |
-
-## AI
-
-| What | Tech | Notes |
-|---|---|---|
-| OCR | **Claude API** | Bank statements, meter readings, staff ID documents |
-| Voice complaints | **Claude API** | 8 regional languages |
-| Notice prioritisation, billing anomalies | **Claude API** | Never auto-denies a person entry |
-
-## Guard app offline engine
-
-| What | Tech | Notes |
-|---|---|---|
-| Local store | **Drift (SQLite) + SQLCipher** | Key in Android Keystore |
-| Offline passes | **Ed25519 signed QR** | Verified on-device, zero network |
-| Sync | Append-only outbox, **UUIDv7** idempotency keys | Exponential backoff drain |
-
-## Observability & testing
-
-| What | Tech | Notes |
-|---|---|---|
-| Errors | **Sentry** | |
-| Logs & traces | **OpenTelemetry → Cloud Logging / Cloud Trace** | |
-| Tests | **pytest**, **Dart test**, **Playwright**, **k6** | |
-| Billing parity | **`golden-vectors.json`** | Same fixture run by Python and Dart suites |
+| Purpose | Provider |
+|---|---|
+| Collections | **Razorpay Route** + **Smart Collect**; direct-merchant mode for owner-collected rent |
+| SMS / OTP | **MSG91** (DLT-registered templates) |
+| Voice / IVR | **Exotel** (the 20-second approval rung) |
+| Push | **FCM + APNs** |
+| WhatsApp | **Meta Business API** |
+| AI / OCR | **Claude API** (via the Python service) |
+| Monitoring | **Sentry** + OpenTelemetry → Cloud Logging |
 
 ---
 
-## Repo layout
+## Repository layout
 
 ```
-apps/api/              FastAPI — uv-managed venv
-apps/worker/           Python — Cloud Tasks + Scheduler handlers
-apps/web-admin/        Next.js — (society)/ and (super)/ route groups
+apps/api/              TypeScript — NestJS. Owns the database and all money.
+apps/worker/           TypeScript — Cloud Tasks/Scheduler handlers
+apps/ai-service/       Python — FastAPI. GenAI, OCR, camera, gate devices. No DB.
+apps/web-admin/        Next.js 15 (static export) — society and super-admin consoles
+apps/desktop/          Tauri — wraps the web-admin static build
 apps/mobile-resident/  Flutter
-apps/mobile-guard/     Flutter
-packages/shared-types/ generated from FastAPI OpenAPI → TS + Dart clients
-packages/billing/      golden-vectors.json
-infra/terraform/       Cloud Run, Cloud Tasks, Cloud Scheduler, Secret Manager, R2
+apps/mobile-guard/     Flutter, offline-first
+packages/money/        decimal.js calculator + golden-vectors.json
+packages/db/           Drizzle schema + SQL migrations (RLS policies live here)
+packages/shared-types/ Zod schemas → TS types, and generated Dart clients
+infra/terraform/       Cloud Run, Cloud Tasks, Scheduler, Secret Manager, R2
+design/                Architecture and compliance documentation
 ```
+
+Four languages, each with a reason: **TypeScript** (money, API, admin, desktop UI),
+**Python** (AI and hardware only), **Dart** (mobile), **Rust** (Tauri shell — generated,
+rarely edited by hand).
+
+---
 
 ## Decisions taken and rejected
 
 | Considered | Chosen | Why |
 |---|---|---|
-| NestJS / TypeScript API | **FastAPI / Python** | Native `Decimal` for money; better Tally/Excel/PDF tooling for the migration work that gates growth |
-| Postgres in Mumbai | **Neon, Singapore** | Owner's decision; Neon has no India region. Residency risk documented in the build plan |
-| Microservices | **Modular monolith** | Distributed transactions across billing before product-market fit is a net loss |
+| Python/FastAPI for everything | **TypeScript for money, Python for AI/devices** | The billing calculator must run identically in browser, server and desktop. Python cannot run in a browser. |
+| Python service with its own DB access | **No database access; calls the API** | Two writers to financial tables means two sets of RLS plumbing and two audit paths |
+| Electron for desktop | **Tauri** | Far smaller binary, lower memory, and it reuses the admin build unchanged |
+| Reflex / HTMX admin console | **Next.js** | Tauri renders web content, and TypeScript lets the money package run in the desktop app too |
+| Next.js with SSR / API routes | **Next.js static export** (`output: 'export'`) | Tauri bundles static files, so no server-side rendering. No loss here — the API is a separate service, so Next.js is doing UI only |
+| `number` for currency | **decimal.js + branded type + lint ban** | JS floats silently corrupt money; sharing float code makes both sides wrong identically |
+| Postgres in Mumbai | **Neon, Singapore** | Owner's decision. Neon has no India region; residency risk documented in SECURITY_COMPLIANCE.md |
+| Microservices | **Modular monolith + one AI/device service** | The split is along a real boundary (money vs machines), not an arbitrary one |
 | Schema-per-tenant | **Shared schema + RLS** | 1,000 schemas means 1,000 migrations per deploy |
-| MongoDB alongside Postgres | **Postgres only** | ~2M gate events/day is a well-indexed Postgres problem, not a big-data one |
+| MongoDB alongside Postgres | **Postgres only** | ~2M gate events/day is a well-indexed Postgres problem |
 | GLM-OCR | **Claude only** | Removes a China-hosted dependency handling society bank statements |
 | FASTag boom barriers | **UHF RFID** | FASTag parking requires an IHMCL-authorised acquirer bank |

@@ -1,0 +1,33 @@
+{
+  "name": "watchmygate",
+  "private": true,
+  "type": "module",
+  "description": "Multi-tenant gated-community management platform",
+  "workspaces": [
+    "packages/*",
+    "apps/api",
+    "apps/worker",
+    "apps/web-admin"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "db:generate": "npm run generate -w @watchmygate/db",
+    "db:migrate": "npm run migrate -w @watchmygate/db",
+    "api:dev": "npm run dev -w @watchmygate/api",
+    "admin:dev": "npm run dev -w @watchmygate/web-admin",
+    "admin:build": "npm run build -w @watchmygate/web-admin",
+    "desktop:dev": "cd apps/desktop && npm run tauri dev",
+    "desktop:build": "cd apps/desktop && npm run tauri build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

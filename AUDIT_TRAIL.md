@@ -235,3 +235,45 @@ would have been invisible in code review. Defect 2 would have burned real SMS cr
 resident phone numbers to a third party from every developer machine.
 **MODEL:** L5
 **NEXT:** Phase 1.
+
+---
+
+## [2026-08-14 10:00] — Stack changed: TypeScript owns money, Python owns machines
+
+**WHAT:** On Krishna's direction, the API moved from Python/FastAPI to **TypeScript**. Python is
+retained as a **separate service** for generative AI and external devices only (camera, ANPR, RFID,
+boom barriers). Desktop is **Tauri**; the admin console is **Next.js** in static-export mode.
+**WHY:** The billing calculator must produce identical results in the browser, on the server and in
+the desktop app. TypeScript is the only language that runs in all three, so the calculator is written
+once in `packages/money` and imported everywhere. Python cannot run in a browser.
+**HOW:** `apps/api` (TypeScript/NestJS) owns the database and every financial path. `apps/ai-service`
+(Python/FastAPI) has **no database access at all** — it calls the core API over HTTP with a service
+token. That keeps one writer for money, one audit path, and one set of tenant-isolation plumbing;
+AI and hardware code can crash or restart freely without risk to financial data.
+**DESIGN:** The one hazard this introduces is that **TypeScript has no native decimal** — JS `Number`
+is a float, so sharing a float-based calculator would make server and browser wrong *identically*,
+which is worse than disagreeing because nothing would flag it. Closed by: `decimal.js` throughout, a
+branded `Money` type so a bare `number` is a compile error, `numeric(18,4)` columns with the pg type
+parser returning strings rather than floats, and a lint rule banning raw arithmetic on currency.
+Flutter cannot import the package, so `packages/money/golden-vectors.json` is executed by both the
+TypeScript and Dart suites — neither can drift without a red build.
+**CODE:** `design/TECH_STACK.md`, `packages/money/`, `packages/db/`, `apps/api/`, `apps/ai-service/`
+**MODEL:** L5
+**NEXT:** Remaining API modules, worker, admin console, Tauri shell, Flutter apps.
+
+---
+
+## [2026-08-14 10:30] — Local Docker removed; real infrastructure only
+
+**WHAT:** Deleted `docker-compose.yml` and the local Postgres/PgBouncer setup. All configuration now
+points at placeholder Neon and Google Cloud values.
+**WHY:** Krishna's decision — go straight to real infrastructure rather than maintaining a local
+substitute.
+**DESIGN:** Consequence stated plainly: **nothing database-backed can be executed until the real Neon
+connection string is supplied.** The isolation tests, migrations and any integration test are written
+and committed but unrun. Pure logic — the money calculator and billing rules — is still fully
+testable, which is why the golden vectors matter more than ever. Configuration refuses to boot in
+production while any value still contains the literal string PLACEHOLDER.
+**CODE:** `.env.example`, `packages/db/src/migrate.ts`
+**MODEL:** L5
+**NEXT:** Await real credentials; continue building until then.

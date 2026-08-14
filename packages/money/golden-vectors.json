@@ -1,0 +1,302 @@
+{
+  "$comment": [
+    "The specification of WatchMyGate's billing maths.",
+    "",
+    "Executed by the TypeScript suite (packages/money) AND the Dart suite in the Flutter",
+    "apps. Flutter cannot import the TypeScript package, so this file is what stops the",
+    "two implementations drifting — neither can change behaviour without a red build.",
+    "",
+    "Every value is a string. Parsing these as floats in any language is a bug: the",
+    "whole point is that they are exact decimals."
+  ],
+  "version": 1,
+
+  "rounding": {
+    "$comment": "Half-up, not banker's. Indian statutory invoicing expects half-up, and a committee checking against a spreadsheet treats banker's rounding as an error.",
+    "cases": [
+      { "input": "0.125", "expected": "0.13" },
+      { "input": "0.135", "expected": "0.14" },
+      { "input": "0.145", "expected": "0.15" },
+      { "input": "2350.755", "expected": "2350.76" },
+      { "input": "0.005", "expected": "0.01" },
+      { "input": "-0.125", "expected": "-0.13" }
+    ]
+  },
+
+  "applyRate": {
+    "$comment": "GST and interest.",
+    "cases": [
+      { "base": "7500.00", "ratePercent": "18", "expected": "1350.00" },
+      { "base": "2350.75", "ratePercent": "18", "expected": "423.14" },
+      { "base": "10000.00", "ratePercent": "2.5", "expected": "250.00" },
+      { "base": "3333.33", "ratePercent": "18", "expected": "600.00" },
+      { "base": "0.00", "ratePercent": "18", "expected": "0.00" }
+    ]
+  },
+
+  "allocate": {
+    "$comment": "The sum of the parts must equal the whole, exactly. A maintenance split that does not reconcile against the society's bank statement destroys trust in month one.",
+    "cases": [
+      {
+        "name": "classic 33.33 x3 remainder",
+        "total": "100.00",
+        "weights": ["1", "1", "1"],
+        "expected": ["33.34", "33.33", "33.33"]
+      },
+      {
+        "name": "per-sq-ft split across three flats",
+        "total": "1000.00",
+        "weights": ["1150", "980", "1340"],
+        "expected": ["330.94", "281.99", "385.63"]
+      },
+      {
+        "name": "fewer paise than shares",
+        "total": "0.05",
+        "weights": ["1", "1", "1", "1", "1", "1"],
+        "expected": ["0.01", "0.01", "0.01", "0.01", "0.01", "0.00"]
+      },
+      {
+        "name": "two unequal shares",
+        "total": "12345.67",
+        "weights": ["7", "3"],
+        "expected": ["8641.97", "3703.70"]
+      },
+      {
+        "name": "single share takes everything",
+        "total": "999.99",
+        "weights": ["1"],
+        "expected": ["999.99"]
+      }
+    ]
+  },
+
+  "computeLine": {
+    "cases": [
+      {
+        "name": "flat maintenance",
+        "spec": { "code": "MAINT", "name": "Maintenance", "formula": "flat", "rate": "3500.00" },
+        "facts": {},
+        "expected": { "quantity": "1", "amount": "3500.00" }
+      },
+      {
+        "name": "per square foot",
+        "spec": { "code": "MAINT", "name": "Maintenance", "formula": "per_sqft", "rate": "2.75" },
+        "facts": { "carpetAreaSqft": "1150.00" },
+        "expected": { "quantity": "1150.00", "amount": "3162.50" }
+      },
+      {
+        "name": "per sq ft with fractional rate rounding",
+        "spec": { "code": "MAINT", "name": "Maintenance", "formula": "per_sqft", "rate": "2.333" },
+        "facts": { "carpetAreaSqft": "1075.50" },
+        "expected": { "quantity": "1075.50", "amount": "2509.14" }
+      },
+      {
+        "name": "per BHK",
+        "spec": { "code": "WATER", "name": "Water", "formula": "per_bhk", "rate": "150.00" },
+        "facts": { "bhk": 3 },
+        "expected": { "quantity": "3", "amount": "450.00" }
+      },
+      {
+        "name": "metered water",
+        "spec": { "code": "WATER", "name": "Water", "formula": "per_meter", "rate": "0.85" },
+        "facts": { "meterReadingUnits": "4230" },
+        "expected": { "quantity": "4230", "amount": "3595.50" }
+      },
+      {
+        "name": "sinking fund as a percentage of maintenance",
+        "spec": { "code": "SINK", "name": "Sinking Fund", "formula": "percentage", "rate": "10" },
+        "facts": { "baseAmount": "3162.50" },
+        "expected": { "quantity": "1", "amount": "316.25" }
+      }
+    ],
+    "errorCases": [
+      {
+        "name": "per_sqft without an area must refuse, not bill zero",
+        "spec": { "code": "MAINT", "name": "Maintenance", "formula": "per_sqft", "rate": "2.75" },
+        "facts": {},
+        "expectedErrorContains": "carpet area"
+      },
+      {
+        "name": "per_bhk without a BHK must refuse",
+        "spec": { "code": "WATER", "name": "Water", "formula": "per_bhk", "rate": "150.00" },
+        "facts": {},
+        "expectedErrorContains": "BHK"
+      },
+      {
+        "name": "per_meter without a reading must refuse",
+        "spec": { "code": "WATER", "name": "Water", "formula": "per_meter", "rate": "0.85" },
+        "facts": {},
+        "expectedErrorContains": "meter reading"
+      }
+    ]
+  },
+
+  "gstApplies": {
+    "$comment": "Both conditions must hold: monthly charge per member above the threshold AND society turnover above its threshold. Societies routinely apply only one and over-charge their members.",
+    "cases": [
+      {
+        "name": "above both thresholds",
+        "monthlyTotal": "8000.00",
+        "societyTurnover": "5000000.00",
+        "expected": true
+      },
+      {
+        "name": "monthly above, turnover below",
+        "monthlyTotal": "8000.00",
+        "societyTurnover": "1500000.00",
+        "expected": false
+      },
+      {
+        "name": "monthly below, turnover above",
+        "monthlyTotal": "7000.00",
+        "societyTurnover": "5000000.00",
+        "expected": false
+      },
+      {
+        "name": "exactly at the monthly threshold is NOT above it",
+        "monthlyTotal": "7500.00",
+        "societyTurnover": "5000000.00",
+        "expected": false
+      },
+      {
+        "name": "one paisa above the threshold",
+        "monthlyTotal": "7500.01",
+        "societyTurnover": "5000000.00",
+        "expected": true
+      }
+    ]
+  },
+
+  "applyGst": {
+    "$comment": "The threshold test uses the member's TOTAL monthly charge, not the individual line. Maintenance and water together can cross it when neither does alone.",
+    "cases": [
+      {
+        "name": "two lines cross the threshold together",
+        "societyTurnover": "5000000.00",
+        "lines": [
+          { "amount": "6000.00", "gstRate": "18" },
+          { "amount": "2000.00", "gstRate": "18" }
+        ],
+        "expectedGst": ["1080.00", "360.00"]
+      },
+      {
+        "name": "below the threshold, no GST on any line",
+        "societyTurnover": "5000000.00",
+        "lines": [
+          { "amount": "3000.00", "gstRate": "18" },
+          { "amount": "1500.00", "gstRate": "18" }
+        ],
+        "expectedGst": ["0.00", "0.00"]
+      },
+      {
+        "name": "small society never charges GST regardless of amount",
+        "societyTurnover": "500000.00",
+        "lines": [{ "amount": "15000.00", "gstRate": "18" }],
+        "expectedGst": ["0.00"]
+      }
+    ]
+  },
+
+  "lateFee": {
+    "$comment": "Simple interest, not compound — most bye-laws specify it and compounding gets challenged at an AGM. A part month counts as a whole month, which must be stated on the bill.",
+    "cases": [
+      {
+        "name": "not yet due",
+        "outstanding": "5000.00",
+        "dueDate": "2026-08-10",
+        "asOf": "2026-08-05",
+        "percentPerMonth": "2",
+        "graceDays": 0,
+        "expected": "0.00"
+      },
+      {
+        "name": "within grace period",
+        "outstanding": "5000.00",
+        "dueDate": "2026-08-10",
+        "asOf": "2026-08-14",
+        "percentPerMonth": "2",
+        "graceDays": 7,
+        "expected": "0.00"
+      },
+      {
+        "name": "one day late counts as a full month",
+        "outstanding": "5000.00",
+        "dueDate": "2026-08-10",
+        "asOf": "2026-08-11",
+        "percentPerMonth": "2",
+        "graceDays": 0,
+        "expected": "100.00"
+      },
+      {
+        "name": "thirty-one days late is two months",
+        "outstanding": "5000.00",
+        "dueDate": "2026-07-01",
+        "asOf": "2026-08-01",
+        "percentPerMonth": "2",
+        "graceDays": 0,
+        "expected": "200.00"
+      },
+      {
+        "name": "zero rate charges nothing",
+        "outstanding": "5000.00",
+        "dueDate": "2026-01-01",
+        "asOf": "2026-08-01",
+        "percentPerMonth": "0",
+        "graceDays": 0,
+        "expected": "0.00"
+      }
+    ]
+  },
+
+  "totalInvoice": {
+    "$comment": "Lines must add up to the printed total. Summing unrounded values and rounding at the end produces a bill whose own lines do not tally.",
+    "cases": [
+      {
+        "name": "maintenance plus water with GST and a late fee",
+        "lines": [
+          { "amount": "6000.00", "gstAmount": "1080.00" },
+          { "amount": "2000.00", "gstAmount": "360.00" }
+        ],
+        "lateFeeAmount": "160.00",
+        "expected": {
+          "subtotal": "8000.00",
+          "gstAmount": "1440.00",
+          "lateFee": "160.00",
+          "total": "9600.00"
+        }
+      },
+      {
+        "name": "no GST, no late fee",
+        "lines": [{ "amount": "3500.00", "gstAmount": "0.00" }],
+        "lateFeeAmount": "0.00",
+        "expected": {
+          "subtotal": "3500.00",
+          "gstAmount": "0.00",
+          "lateFee": "0.00",
+          "total": "3500.00"
+        }
+      }
+    ]
+  },
+
+  "toPaise": {
+    "$comment": "Gateway boundary only. Razorpay works in integer paise.",
+    "cases": [
+      { "amount": "1250.50", "expected": 125050 },
+      { "amount": "0.01", "expected": 1 },
+      { "amount": "9600.00", "expected": 960000 },
+      { "amount": "3162.505", "expected": 316251 }
+    ]
+  },
+
+  "format": {
+    "$comment": "Indian digit grouping: last three, then pairs.",
+    "cases": [
+      { "amount": "1234567.89", "expected": "₹12,34,567.89" },
+      { "amount": "1000.00", "expected": "₹1,000.00" },
+      { "amount": "999.50", "expected": "₹999.50" },
+      { "amount": "100000.00", "expected": "₹1,00,000.00" },
+      { "amount": "-4500.25", "expected": "-₹4,500.25" }
+    ]
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Bash(npm:*)",
+      "Bash(npm run:*)",
+      "Bash(npx:*)",
+      "Bash(node:*)",
+      "Bash(./.venv/Scripts/python.exe:*)",
+      "Bash(.venv/Scripts/python.exe:*)",
+      "Bash(python:*)",
+      "Bash(py:*)",
+      "Bash(pytest:*)",
+      "Bash(flutter:*)",
+      "Bash(dart:*)",
+      "Bash(git:*)",
+      "Bash(curl:*)",
+      "Bash(cd:*)",
+      "Bash(ls:*)",
+      "Bash(mkdir:*)",
+      "Bash(docker:*)",
+      "Bash(make:*)",
+      "Monitor",
+      "TaskStop",
+      "TaskOutput",
+      "ToolSearch",
+      "Agent",
+      "SendMessage",
+      "PushNotification",
+      "Skill",
+      "TodoWrite",
+      "AskUserQuestion"
+    ]
+  }
+}

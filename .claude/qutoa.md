@@ -1,0 +1,1 @@
+when AI agent quota reach 90% of threshold and above, then AI Agent stop taking any further request and update all the changes done in Project_status.md file in the project

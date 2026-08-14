@@ -1,0 +1,1056 @@
+/**
+ * Drizzle schema.
+ *
+ * Conventions that carry real weight:
+ *
+ * - Every tenant-scoped table has `societyId` and an RLS policy (see migrations).
+ * - Money is `numeric(18, 4)`. The pg type parser returns it as a **string**, which
+ *   `packages/money` converts to Decimal. A currency value never becomes a JS number.
+ * - Timestamps are `timestamptz`, stored UTC.
+ * - Soft delete is avoided; explicit status columns mean a query cannot forget a filter.
+ */
+
+import {
+  boolean,
+  char,
+  date,
+  index,
+  integer,
+  jsonb,
+  numeric,
+  pgEnum,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+  varchar,
+} from "drizzle-orm/pg-core";
+
+// ------------------------------------------------------------------- enums
+
+export const societyStatus = pgEnum("society_status", [
+  "onboarding",
+  "active",
+  "suspended",
+]);
+export const planTier = pgEnum("plan_tier", ["basic", "pro", "enterprise"]);
+export const unitStatus = pgEnum("unit_status", [
+  "occupied",
+  "vacant",
+  "under_renovation",
+]);
+export const occupancyRelationship = pgEnum("occupancy_relationship", [
+  "owner",
+  "tenant",
+  "family_member",
+  "occupant",
+]);
+export const personStatus = pgEnum("person_status", ["active", "deactivated"]);
+export const roleCode = pgEnum("role_code", [
+  "super_admin",
+  "society_admin",
+  "mc_member",
+  "accountant",
+  "auditor",
+  "guard",
+  "resident",
+  "staff",
+]);
+export const roleScopeType = pgEnum("role_scope_type", ["society", "tower", "unit"]);
+
+export const ticketStatus = pgEnum("ticket_status", [
+  "open",
+  "in_progress",
+  "resolved",
+  "closed",
+  "reopened",
+]);
+export const ticketPriority = pgEnum("ticket_priority", [
+  "low",
+  "normal",
+  "high",
+  "urgent",
+]);
+export const ticketLocationType = pgEnum("ticket_location_type", [
+  "unit",
+  "tower",
+  "floor",
+  "amenity",
+  "common",
+]);
+export const ticketEventType = pgEnum("ticket_event_type", [
+  "comment",
+  "status_change",
+  "assignment",
+  "internal_note",
+  "attachment",
+  "rating",
+  "reopen",
+  "escalation",
+]);
+export const visibility = pgEnum("ticket_event_visibility", ["public", "staff_only"]);
+export const attachmentKind = pgEnum("attachment_kind", [
+  "photo",
+  "video",
+  "voice",
+  "document",
+]);
+
+export const visitorCategory = pgEnum("visitor_category", [
+  "guest",
+  "delivery",
+  "cab",
+  "courier",
+  "service",
+  "staff",
+]);
+export const passStatus = pgEnum("pass_status", ["active", "used", "expired", "revoked"]);
+export const gateDirection = pgEnum("gate_direction", ["entry", "exit"]);
+export const approvalState = pgEnum("approval_state", [
+  "pending",
+  "approved",
+  "denied",
+  "auto_approved",
+  "timed_out",
+  "escalated",
+]);
+export const approvalRung = pgEnum("approval_rung", [
+  "push",
+  "ivr",
+  "sms",
+  "standing_rule",
+  "mc_escalation",
+]);
+export const standingAction = pgEnum("standing_action", [
+  "auto_approve",
+  "ask_to_wait",
+  "deny",
+]);
+export const sosType = pgEnum("sos_type", ["medical", "fire", "gas", "security"]);
+
+export const accountType = pgEnum("account_type", [
+  "asset",
+  "liability",
+  "income",
+  "expense",
+  "equity",
+]);
+export const journalSourceType = pgEnum("journal_source_type", [
+  "invoice",
+  "receipt",
+  "payment",
+  "adjustment",
+  "opening",
+  "contra",
+]);
+export const periodStatus = pgEnum("period_status", ["open", "locked"]);
+export const invoiceStatus = pgEnum("invoice_status", [
+  "draft",
+  "issued",
+  "partially_paid",
+  "paid",
+  "void",
+]);
+export const billingFormula = pgEnum("billing_formula", [
+  "flat",
+  "per_sqft",
+  "per_bhk",
+  "per_meter",
+  "percentage",
+  "manual",
+]);
+export const paymentMethod = pgEnum("payment_method", [
+  "upi",
+  "card",
+  "netbanking",
+  "neft",
+  "cash",
+  "cheque",
+]);
+export const payeeType = pgEnum("payee_type", ["society", "person"]);
+export const destinationMode = pgEnum("destination_mode", [
+  "route_linked",
+  "direct_merchant",
+]);
+export const destinationStatus = pgEnum("destination_status", [
+  "pending",
+  "verified",
+  "failed",
+  "disabled",
+]);
+
+// --------------------------------------------------------- shared columns
+
+const money = (name: string) => numeric(name, { precision: 18, scale: 4 });
+const timestamps = {
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+};
+
+// ------------------------------------------------------------- tenancy
+
+export const societies = pgTable("societies", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: varchar("name", { length: 200 }).notNull(),
+  slug: varchar("slug", { length: 80 }).notNull().unique(),
+  /** Drives the statutory rule-pack — billing heads and AGM rules differ by state. */
+  stateCode: char("state_code", { length: 2 }).notNull(),
+  planTier: planTier("plan_tier").notNull().default("basic"),
+  timezone: varchar("timezone", { length: 64 }).notNull().default("Asia/Kolkata"),
+  status: societyStatus("status").notNull().default("onboarding"),
+  ...timestamps,
+});
+
+/**
+ * Not tenant-scoped, deliberately: one human may be a resident in society A and a
+ * committee member in society B. Scoping lives on the relationship, not the person.
+ */
+export const persons = pgTable("persons", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  phone: varchar("phone", { length: 16 }).notNull().unique(),
+  name: varchar("name", { length: 200 }),
+  email: varchar("email", { length: 320 }),
+  status: personStatus("status").notNull().default("active"),
+  totpEnrolled: boolean("totp_enrolled").notNull().default(false),
+  ...timestamps,
+});
+
+export const roles = pgTable("roles", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  code: roleCode("code").notNull().unique(),
+  name: varchar("name", { length: 80 }).notNull(),
+});
+
+export const towers = pgTable(
+  "towers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    name: varchar("name", { length: 80 }).notNull(),
+    floors: integer("floors"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_tower_society_name").on(t.societyId, t.name),
+    index("ix_towers_society").on(t.societyId),
+  ],
+);
+
+export const units = pgTable(
+  "units",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    towerId: uuid("tower_id")
+      .notNull()
+      .references(() => towers.id),
+    number: varchar("number", { length: 32 }).notNull(),
+    floor: integer("floor"),
+    carpetAreaSqft: numeric("carpet_area_sqft", { precision: 10, scale: 2 }),
+    bhk: integer("bhk"),
+    status: unitStatus("status").notNull().default("vacant"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_unit_society_tower_number").on(t.societyId, t.towerId, t.number),
+    index("ix_units_society_status").on(t.societyId, t.status),
+  ],
+);
+
+/**
+ * Bitemporal occupancy — the part competitors get wrong.
+ *
+ * Billing liability, voting rights and app access are three *separate* relationships
+ * and routinely belong to different people: the owner votes while the tenant pays, and
+ * both need access.
+ *
+ * `validFrom`/`validTo` is business time; `recordedAt` is system time. A resident
+ * saying six weeks later "I actually moved out on the 3rd" inserts a correction rather
+ * than editing history, so bills regenerate correctly while the audit trail keeps what
+ * we believed and when.
+ */
+export const unitOccupancies = pgTable(
+  "unit_occupancies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => units.id),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    relationship: occupancyRelationship("relationship").notNull(),
+    isBillingLiable: boolean("is_billing_liable").notNull().default(false),
+    hasVotingRight: boolean("has_voting_right").notNull().default(false),
+    hasAppAccess: boolean("has_app_access").notNull().default(true),
+    validFrom: date("valid_from").notNull(),
+    validTo: date("valid_to"),
+    supersededAt: timestamp("superseded_at", { withTimezone: true }),
+    recordedAt: timestamp("recorded_at", { withTimezone: true }).notNull().defaultNow(),
+    createdBy: uuid("created_by"),
+    ...timestamps,
+  },
+  (t) => [
+    index("ix_occupancy_person").on(t.societyId, t.personId),
+    index("ix_occupancy_unit").on(t.societyId, t.unitId),
+  ],
+);
+
+export const roleAssignments = pgTable(
+  "role_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    roleId: uuid("role_id")
+      .notNull()
+      .references(() => roles.id),
+    scopeType: roleScopeType("scope_type").notNull().default("society"),
+    scopeId: uuid("scope_id"),
+    validFrom: date("valid_from").notNull(),
+    validTo: date("valid_to"),
+    ...timestamps,
+  },
+  (t) => [index("ix_role_assignment_person").on(t.personId, t.societyId)],
+);
+
+// ---------------------------------------------------------------- auth
+
+export const otpChallenges = pgTable(
+  "otp_challenges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    phone: varchar("phone", { length: 16 }).notNull(),
+    /** Argon2 hash. The code itself is never stored. */
+    codeHash: varchar("code_hash", { length: 255 }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    consumedAt: timestamp("consumed_at", { withTimezone: true }),
+    requestIp: varchar("request_ip", { length: 45 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_otp_phone_active").on(t.phone, t.expiresAt)],
+);
+
+/**
+ * Refresh tokens rotate on every use. `rotatedTo` detects reuse of an already-exchanged
+ * token — which means a copy leaked, so the whole session family is revoked rather than
+ * guessing which holder is legitimate.
+ */
+export const sessions = pgTable(
+  "sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    refreshTokenHash: varchar("refresh_token_hash", { length: 255 }).notNull().unique(),
+    /** Guard devices are society property; an admin must be able to revoke one handset. */
+    deviceId: varchar("device_id", { length: 128 }),
+    deviceLabel: varchar("device_label", { length: 128 }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    rotatedTo: uuid("rotated_to"),
+    lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+    ip: varchar("ip", { length: 45 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_session_person").on(t.personId)],
+);
+
+// ------------------------------------------------------------ helpdesk
+
+export const ticketCategories = pgTable(
+  "ticket_categories",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    parentId: uuid("parent_id"),
+    name: varchar("name", { length: 120 }).notNull(),
+    /** Auto-routing target. Assignee wins if both are set. */
+    defaultAssigneeId: uuid("default_assignee_id"),
+    defaultVendorId: uuid("default_vendor_id"),
+    slaHours: integer("sla_hours").notNull().default(24),
+    escalationHours: integer("escalation_hours").notNull().default(48),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index("ix_category_society").on(t.societyId)],
+);
+
+export const tickets = pgTable(
+  "tickets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    /** Human-facing, per society. Residents quote it on the phone. */
+    ticketNumber: varchar("ticket_number", { length: 24 }).notNull(),
+    raisedBy: uuid("raised_by")
+      .notNull()
+      .references(() => persons.id),
+    /** Null for common-area issues — the lift belongs to the tower, not a flat. */
+    unitId: uuid("unit_id").references(() => units.id),
+    locationType: ticketLocationType("location_type").notNull(),
+    locationRef: uuid("location_ref"),
+    locationNote: varchar("location_note", { length: 200 }),
+    categoryId: uuid("category_id")
+      .notNull()
+      .references(() => ticketCategories.id),
+    title: varchar("title", { length: 200 }).notNull(),
+    description: text("description"),
+    /** Set when filed by voice, so the original language is preserved. */
+    voiceTranscriptLanguage: varchar("voice_transcript_language", { length: 8 }),
+    status: ticketStatus("status").notNull().default("open"),
+    priority: ticketPriority("priority").notNull().default("normal"),
+    assigneeId: uuid("assignee_id"),
+    vendorId: uuid("vendor_id"),
+    slaDueAt: timestamp("sla_due_at", { withTimezone: true }).notNull(),
+    escalationDueAt: timestamp("escalation_due_at", { withTimezone: true }).notNull(),
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: uuid("resolved_by"),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    rating: integer("rating"),
+    ratingComment: varchar("rating_comment", { length: 500 }),
+    /** Set when merged into an earlier report of the same problem. */
+    duplicateOf: uuid("duplicate_of"),
+    reopenCount: integer("reopen_count").notNull().default(0),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_ticket_society_number").on(t.societyId, t.ticketNumber),
+    index("ix_ticket_society_status").on(t.societyId, t.status),
+    index("ix_ticket_sla_due").on(t.societyId, t.slaDueAt),
+    index("ix_ticket_raised_by").on(t.societyId, t.raisedBy),
+  ],
+);
+
+export const ticketEvents = pgTable(
+  "ticket_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    actorId: uuid("actor_id"),
+    type: ticketEventType("type").notNull(),
+    body: text("body"),
+    /** staff_only notes are never returned to the resident who raised the ticket. */
+    visibility: visibility("visibility").notNull().default("public"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_ticket_event_ticket").on(t.societyId, t.ticketId, t.createdAt)],
+);
+
+/** Everyone notified — reporter, assignee, committee, and reporters of merged duplicates. */
+export const ticketSubscribers = pgTable(
+  "ticket_subscribers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    ticketId: uuid("ticket_id")
+      .notNull()
+      .references(() => tickets.id, { onDelete: "cascade" }),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    reason: varchar("reason", { length: 40 }).notNull().default("reporter"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_ticket_subscriber").on(t.ticketId, t.personId)],
+);
+
+/** A file in R2. The row records the key; bytes never pass through the API. */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    ownerType: varchar("owner_type", { length: 32 }).notNull(),
+    ownerId: uuid("owner_id").notNull(),
+    r2Key: varchar("r2_key", { length: 500 }).notNull().unique(),
+    contentType: varchar("content_type", { length: 120 }).notNull(),
+    bytes: integer("bytes").notNull(),
+    kind: attachmentKind("kind").notNull(),
+    uploadedBy: uuid("uploaded_by"),
+    /** Distinguishes the repair evidence from the resident's original photos. */
+    isProofOfFix: boolean("is_proof_of_fix").notNull().default(false),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_attachment_owner").on(t.societyId, t.ownerType, t.ownerId)],
+);
+
+// ---------------------------------------------------------------- gate
+
+export const societySigningKeys = pgTable(
+  "society_signing_keys",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    keyVersion: integer("key_version").notNull(),
+    publicKey: varchar("public_key", { length: 120 }).notNull(),
+    /** Reference to Secret Manager. The private key is never stored here. */
+    privateKeyRef: varchar("private_key_ref", { length: 300 }).notNull(),
+    validFrom: timestamp("valid_from", { withTimezone: true }).notNull(),
+    validTo: timestamp("valid_to", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_signing_key_version").on(t.societyId, t.keyVersion)],
+);
+
+export const gates = pgTable(
+  "gates",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    name: varchar("name", { length: 80 }).notNull(),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_gate_society_name").on(t.societyId, t.name)],
+);
+
+export const visitorPasses = pgTable(
+  "visitor_passes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id")
+      .notNull()
+      .references(() => units.id),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => persons.id),
+    visitorName: varchar("visitor_name", { length: 120 }).notNull(),
+    visitorPhone: varchar("visitor_phone", { length: 16 }),
+    /** Salted and non-reversible — the QR is photographed and forwarded on WhatsApp. */
+    visitorHash: varchar("visitor_hash", { length: 64 }).notNull(),
+    visitorSalt: varchar("visitor_salt", { length: 32 }).notNull(),
+    category: visitorCategory("category").notNull(),
+    vehicleNumber: varchar("vehicle_number", { length: 20 }),
+    validFrom: timestamp("valid_from", { withTimezone: true }).notNull(),
+    validTo: timestamp("valid_to", { withTimezone: true }).notNull(),
+    maxUses: integer("max_uses").notNull().default(1),
+    uses: integer("uses").notNull().default(0),
+    keyVersion: integer("key_version").notNull(),
+    qrValue: text("qr_value").notNull(),
+    status: passStatus("status").notNull().default("active"),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index("ix_pass_unit").on(t.societyId, t.unitId)],
+);
+
+/**
+ * Append-only and conflict-free by construction.
+ *
+ * The id is a client-generated UUIDv7, so the guard app creates events offline and
+ * replays them idempotently — the primary key *is* the deduplication key.
+ */
+export const gateEvents = pgTable(
+  "gate_events",
+  {
+    id: uuid("id").primaryKey(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    gateId: uuid("gate_id"),
+    unitId: uuid("unit_id"),
+    passId: uuid("pass_id"),
+    guardPersonId: uuid("guard_person_id"),
+    direction: gateDirection("direction").notNull(),
+    category: visitorCategory("category").notNull(),
+    visitorName: varchar("visitor_name", { length: 120 }),
+    visitorPhone: varchar("visitor_phone", { length: 16 }),
+    vehicleNumber: varchar("vehicle_number", { length: 20 }),
+    photoKey: varchar("photo_key", { length: 500 }),
+    /** True when the guard app verified the pass signature with no network. */
+    verifiedOffline: boolean("verified_offline").notNull().default(false),
+    /** Guard clocks are routinely hours out. Business logic uses serverTs only. */
+    deviceTs: timestamp("device_ts", { withTimezone: true }).notNull(),
+    serverTs: timestamp("server_ts", { withTimezone: true }).notNull().defaultNow(),
+    clockDriftSeconds: integer("clock_drift_seconds"),
+    syncedAt: timestamp("synced_at", { withTimezone: true }),
+    approvalId: uuid("approval_id"),
+    exitOfEventId: uuid("exit_of_event_id"),
+    overstayAlertedAt: timestamp("overstay_alerted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ix_gate_event_unit").on(t.societyId, t.unitId, t.serverTs),
+    index("ix_gate_event_recent").on(t.societyId, t.serverTs),
+  ],
+);
+
+export const approvals = pgTable(
+  "approvals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id").notNull(),
+    gateEventId: uuid("gate_event_id"),
+    state: approvalState("state").notNull().default("pending"),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedBy: uuid("resolved_by"),
+    resolutionRung: approvalRung("resolution_rung"),
+    visitorName: varchar("visitor_name", { length: 120 }),
+    visitorPhone: varchar("visitor_phone", { length: 16 }),
+    category: visitorCategory("category").notNull(),
+    photoKey: varchar("photo_key", { length: 500 }),
+    standingRuleId: uuid("standing_rule_id"),
+    ...timestamps,
+  },
+  (t) => [index("ix_approval_pending").on(t.societyId, t.state, t.requestedAt)],
+);
+
+/** One row per ladder step fired — lets a resident check "I never got the notification". */
+export const approvalRungs = pgTable(
+  "approval_rungs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    approvalId: uuid("approval_id")
+      .notNull()
+      .references(() => approvals.id, { onDelete: "cascade" }),
+    rung: approvalRung("rung").notNull(),
+    firedAt: timestamp("fired_at", { withTimezone: true }).notNull(),
+    channelResult: varchar("channel_result", { length: 200 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_rung_approval").on(t.societyId, t.approvalId)],
+);
+
+/** Per-unit default applied at t=45s: "always let Amazon in", "never salespeople". */
+export const standingRules = pgTable(
+  "standing_rules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id").notNull(),
+    category: visitorCategory("category"),
+    matcher: varchar("matcher", { length: 120 }),
+    action: standingAction("action").notNull(),
+    createdBy: uuid("created_by"),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index("ix_standing_rule_unit").on(t.societyId, t.unitId)],
+);
+
+export const sosAlerts = pgTable(
+  "sos_alerts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    personId: uuid("person_id").notNull(),
+    unitId: uuid("unit_id"),
+    type: sosType("type").notNull(),
+    latitude: varchar("latitude", { length: 24 }),
+    longitude: varchar("longitude", { length: 24 }),
+    raisedAt: timestamp("raised_at", { withTimezone: true }).notNull(),
+    acknowledgedBy: uuid("acknowledged_by"),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [index("ix_sos_open").on(t.societyId, t.closedAt)],
+);
+
+export const watchlist = pgTable(
+  "watchlist",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    phone: varchar("phone", { length: 16 }).notNull(),
+    name: varchar("name", { length: 120 }),
+    reason: varchar("reason", { length: 300 }).notNull(),
+    addedBy: uuid("added_by"),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_watchlist_society_phone").on(t.societyId, t.phone)],
+);
+
+// -------------------------------------------------------------- ledger
+
+export const ledgerAccounts = pgTable(
+  "ledger_accounts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    code: varchar("code", { length: 24 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    type: accountType("type").notNull(),
+    parentId: uuid("parent_id"),
+    /** Corpus and sinking funds — spending needs committee approval. */
+    isRestricted: boolean("is_restricted").notNull().default(false),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_account_society_code").on(t.societyId, t.code)],
+);
+
+export const accountingPeriods = pgTable(
+  "accounting_periods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    startsOn: date("starts_on").notNull(),
+    endsOn: date("ends_on").notNull(),
+    status: periodStatus("status").notNull().default("open"),
+    lockedBy: uuid("locked_by"),
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    /** Two-person control: reopening a closed book is how fraud happens. */
+    reopenedBy: uuid("reopened_by"),
+    reopenedApprovedBy: uuid("reopened_approved_by"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_period_society_start").on(t.societyId, t.startsOn)],
+);
+
+/**
+ * Posted entries are immutable. UPDATE and DELETE are revoked from the application role
+ * and enforced by trigger in migration 0002 — application discipline is not the control.
+ * Corrections are reversing entries.
+ */
+export const journalEntries = pgTable(
+  "journal_entries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    entryNumber: varchar("entry_number", { length: 24 }).notNull(),
+    entryDate: date("entry_date").notNull(),
+    narration: text("narration").notNull(),
+    sourceType: journalSourceType("source_type").notNull(),
+    sourceId: uuid("source_id"),
+    postedAt: timestamp("posted_at", { withTimezone: true }).notNull(),
+    postedBy: uuid("posted_by"),
+    reversesEntryId: uuid("reverses_entry_id"),
+    periodId: uuid("period_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    uniqueIndex("uq_journal_society_number").on(t.societyId, t.entryNumber),
+    index("ix_journal_date").on(t.societyId, t.entryDate),
+    index("ix_journal_source").on(t.societyId, t.sourceType, t.sourceId),
+  ],
+);
+
+export const journalLines = pgTable(
+  "journal_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    journalEntryId: uuid("journal_entry_id")
+      .notNull()
+      .references(() => journalEntries.id),
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => ledgerAccounts.id),
+    debit: money("debit").notNull().default("0"),
+    credit: money("credit").notNull().default("0"),
+    currency: char("currency", { length: 3 }).notNull().default("INR"),
+    unitId: uuid("unit_id"),
+  },
+  (t) => [
+    index("ix_line_entry").on(t.journalEntryId),
+    index("ix_line_account").on(t.societyId, t.accountId),
+  ],
+);
+
+// -------------------------------------------------------------- billing
+
+export const chargeTypes = pgTable(
+  "charge_types",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    code: varchar("code", { length: 32 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    formula: billingFormula("formula").notNull(),
+    rate: money("rate").notNull().default("0"),
+    accountId: uuid("account_id").notNull(),
+    gstApplicable: boolean("gst_applicable").notNull().default(false),
+    gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull().default("18"),
+    isRecurring: boolean("is_recurring").notNull().default(true),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_charge_society_code").on(t.societyId, t.code)],
+);
+
+/** Statutory thresholds as data, not code — legislation moves. */
+export const gstRules = pgTable("gst_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id")
+    .notNull()
+    .references(() => societies.id),
+  effectiveFrom: date("effective_from").notNull(),
+  monthlyThresholdPerMember: money("monthly_threshold_per_member").notNull().default("7500"),
+  annualTurnoverThreshold: money("annual_turnover_threshold").notNull().default("2000000"),
+  rate: numeric("rate", { precision: 5, scale: 2 }).notNull().default("18"),
+  societyTurnover: money("society_turnover").notNull().default("0"),
+  lateFeePercentPerMonth: numeric("late_fee_percent_per_month", {
+    precision: 5,
+    scale: 2,
+  })
+    .notNull()
+    .default("0"),
+  graceDays: integer("grace_days").notNull().default(0),
+  ...timestamps,
+});
+
+export const invoices = pgTable(
+  "invoices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id").notNull(),
+    invoiceNumber: varchar("invoice_number", { length: 32 }).notNull(),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    issueDate: date("issue_date").notNull(),
+    dueDate: date("due_date").notNull(),
+    subtotal: money("subtotal").notNull().default("0"),
+    gstAmount: money("gst_amount").notNull().default("0"),
+    lateFee: money("late_fee").notNull().default("0"),
+    total: money("total").notNull().default("0"),
+    currency: char("currency", { length: 3 }).notNull().default("INR"),
+    status: invoiceStatus("status").notNull().default("draft"),
+    /** Frozen at issue time — if the tenant moves out next week this invoice is still theirs. */
+    liablePersonId: uuid("liable_person_id"),
+    journalEntryId: uuid("journal_entry_id"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_invoice_society_number").on(t.societyId, t.invoiceNumber),
+    index("ix_invoice_unit_status").on(t.societyId, t.unitId, t.status),
+    index("ix_invoice_due").on(t.societyId, t.dueDate),
+  ],
+);
+
+export const invoiceLines = pgTable(
+  "invoice_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    chargeTypeId: uuid("charge_type_id").notNull(),
+    description: varchar("description", { length: 300 }).notNull(),
+    quantity: money("quantity").notNull().default("1"),
+    rate: money("rate").notNull().default("0"),
+    amount: money("amount").notNull().default("0"),
+    gstRate: numeric("gst_rate", { precision: 5, scale: 2 }).notNull().default("0"),
+    gstAmount: money("gst_amount").notNull().default("0"),
+  },
+  (t) => [index("ix_invoice_line_invoice").on(t.invoiceId)],
+);
+
+// ------------------------------------------------------------- payments
+
+/**
+ * Where money for a charge goes.
+ *
+ * `route_linked` — Razorpay Route, settling to the society's own bank.
+ * `direct_merchant` — the owner's own gateway account, zero platform commission.
+ *
+ * In both, funds never enter a WatchMyGate account. Credentials are **references to
+ * Secret Manager paths**, never the secrets themselves.
+ */
+export const paymentDestinations = pgTable(
+  "payment_destinations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    payeeType: payeeType("payee_type").notNull(),
+    payeeId: uuid("payee_id").notNull(),
+    mode: destinationMode("mode").notNull(),
+    provider: varchar("provider", { length: 32 }).notNull().default("razorpay"),
+    merchantId: varchar("merchant_id", { length: 120 }),
+    credentialsSecretRef: varchar("credentials_secret_ref", { length: 300 }),
+    webhookSecretRef: varchar("webhook_secret_ref", { length: 300 }),
+    status: destinationStatus("status").notNull().default("pending"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    /** Razorpay Smart Collect per-unit virtual account, for NEFT auto-reconciliation. */
+    virtualAccountNumber: varchar("virtual_account_number", { length: 64 }),
+    virtualIfsc: varchar("virtual_ifsc", { length: 16 }),
+    ...timestamps,
+  },
+  (t) => [index("ix_destination_payee").on(t.societyId, t.payeeType, t.payeeId)],
+);
+
+export const chargeTypeRouting = pgTable(
+  "charge_type_routing",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    chargeTypeCode: varchar("charge_type_code", { length: 32 }).notNull(),
+    unitId: uuid("unit_id"),
+    destinationId: uuid("destination_id").notNull(),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_routing").on(t.societyId, t.chargeTypeCode, t.unitId)],
+);
+
+export const receipts = pgTable(
+  "receipts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id"),
+    receiptNumber: varchar("receipt_number", { length: 32 }).notNull(),
+    receivedOn: date("received_on").notNull(),
+    amount: money("amount").notNull(),
+    currency: char("currency", { length: 3 }).notNull().default("INR"),
+    method: paymentMethod("method").notNull(),
+    providerPaymentId: varchar("provider_payment_id", { length: 120 }),
+    /** Webhook idempotency — Razorpay retries aggressively, so a conflict is correct. */
+    providerEventId: varchar("provider_event_id", { length: 160 }).unique(),
+    destinationId: uuid("destination_id"),
+    journalEntryId: uuid("journal_entry_id"),
+    payerPersonId: uuid("payer_person_id"),
+    /** Manual UTR entry. Never marks an invoice paid on its own. */
+    unverifiedUtr: varchar("unverified_utr", { length: 40 }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_receipt_society_number").on(t.societyId, t.receiptNumber),
+    index("ix_receipt_unit").on(t.societyId, t.unitId),
+  ],
+);
+
+export const receiptAllocations = pgTable(
+  "receipt_allocations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    receiptId: uuid("receipt_id")
+      .notNull()
+      .references(() => receipts.id),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id),
+    amount: money("amount").notNull(),
+  },
+  (t) => [
+    index("ix_allocation_receipt").on(t.receiptId),
+    index("ix_allocation_invoice").on(t.invoiceId),
+  ],
+);
+
+// ---------------------------------------------------------------- audit
+
+export const auditLog = pgTable("audit_log", {
+  id: uuid("id").notNull().defaultRandom(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  societyId: uuid("society_id"),
+  actorPersonId: uuid("actor_person_id"),
+  action: varchar("action", { length: 80 }).notNull(),
+  entityType: varchar("entity_type", { length: 80 }).notNull(),
+  entityId: uuid("entity_id"),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  /** Required for sensitive reads — credential access, CCTV, attachment downloads. */
+  reason: varchar("reason", { length: 500 }),
+  ip: varchar("ip", { length: 45 }),
+  userAgent: varchar("user_agent", { length: 400 }),
+});
+
+/** Consent ledger — append-only. Withdrawal is a new row, never an update. */
+export const consents = pgTable("consents", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id"),
+  personId: uuid("person_id")
+    .notNull()
+    .references(() => persons.id),
+  purpose: varchar("purpose", { length: 120 }).notNull(),
+  noticeVersion: varchar("notice_version", { length: 32 }).notNull(),
+  noticeTextHash: varchar("notice_text_hash", { length: 64 }).notNull(),
+  granted: boolean("granted").notNull(),
+  grantedAt: timestamp("granted_at", { withTimezone: true }),
+  withdrawnAt: timestamp("withdrawn_at", { withTimezone: true }),
+  source: varchar("source", { length: 16 }).notNull().default("app"),
+  ip: varchar("ip", { length: 45 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Push notification device registrations. */
+export const deviceTokens = pgTable(
+  "device_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id, { onDelete: "cascade" }),
+    token: varchar("token", { length: 400 }).notNull().unique(),
+    platform: varchar("platform", { length: 16 }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_device_person").on(t.personId)],
+);
