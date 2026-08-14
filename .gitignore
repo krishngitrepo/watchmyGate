@@ -50,3 +50,6 @@ out/
 .DS_Store
 Thumbs.db
 *.swp
+
+# npm workspace lockfile is committed; installed trees are not
+package-lock.json.bak

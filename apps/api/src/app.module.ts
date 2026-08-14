@@ -2,10 +2,13 @@ import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common
 
 import { TenantMiddleware } from "./common/tenant.middleware.js";
 import { HealthController } from "./common/health.controller.js";
+import { StorageService } from "./common/storage.service.js";
 import { AuthController } from "./modules/auth/auth.controller.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { BillingController } from "./modules/billing/billing.controller.js";
 import { BillingService } from "./modules/billing/billing.service.js";
+import { HelpdeskController } from "./modules/helpdesk/helpdesk.controller.js";
+import { HelpdeskService } from "./modules/helpdesk/helpdesk.service.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { SmsService } from "./modules/notify/sms.service.js";
 
@@ -17,8 +20,20 @@ import { SmsService } from "./modules/notify/sms.service.js";
  * when a module has a reason to be extracted, not before.
  */
 @Module({
-  controllers: [HealthController, AuthController, BillingController],
-  providers: [AuthService, SmsService, LedgerService, BillingService],
+  controllers: [
+    HealthController,
+    AuthController,
+    BillingController,
+    HelpdeskController,
+  ],
+  providers: [
+    AuthService,
+    SmsService,
+    StorageService,
+    LedgerService,
+    BillingService,
+    HelpdeskService,
+  ],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
