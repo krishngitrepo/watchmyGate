@@ -11,8 +11,9 @@
  * ship by accident.
  */
 
-import { writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { Injectable } from "@nestjs/common";
 
@@ -21,6 +22,24 @@ import { UpstreamError } from "../../common/errors.js";
 
 const MSG91_OTP_URL = "https://control.msg91.com/api/v5/otp";
 const MSG91_FLOW_URL = "https://control.msg91.com/api/v5/flow";
+
+/**
+ * The monorepo root, found by walking up from this file until `.git` appears.
+ *
+ * Works identically from `src/` under the watcher and from `dist/` under `node`, and is
+ * unaffected by the directory the process was launched in. Falls back to the current
+ * directory if no marker is found, which only happens outside a checkout.
+ */
+function repoRoot(): string {
+  let dir = dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 10; i += 1) {
+    if (existsSync(join(dir, ".git"))) return dir;
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return process.cwd();
+}
 
 export type TemplateCategory =
   | "transactional"
@@ -94,13 +113,18 @@ export class SmsService {
    * Guarded three ways so it can never run outside local development: stub mode only
    * (a real MSG91 key means this is never reached), never in production, and any write
    * failure is swallowed. It is a development convenience, not a feature.
+   *
+   * The location is resolved from this module's own path, not `process.cwd()`. A
+   * cwd-relative path is wrong in two directions at once: started from the repo root it
+   * resolves *above* the repo, so the file lands outside `.gitignore`'s reach — a
+   * plaintext login code written to an arbitrary directory — and the suite that reads it
+   * finds nothing, which looks like a broken login rather than a misplaced file.
    */
   private writeStubFile(phone: string, code: string): void {
     if (this.config.isProduction) return;
 
     try {
-      const target =
-        process.env.OTP_STUB_FILE ?? join(process.cwd(), "..", "..", ".otp-stub.json");
+      const target = process.env.OTP_STUB_FILE ?? join(repoRoot(), ".otp-stub.json");
       writeFileSync(
         target,
         JSON.stringify({ phone, code, at: new Date().toISOString() }),

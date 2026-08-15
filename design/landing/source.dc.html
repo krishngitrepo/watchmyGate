@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<script src="./image-slot.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; font-family: 'Manrope', system-ui, sans-serif; background: #FAF5EE; color: #3A2E24; -webkit-font-smoothing: antialiased; }
+  a { color: #6E2436; text-decoration: none; }
+  a:hover { color: #C8862A; }
+  ::selection { background: #E9C77E; color: #3A2E24; }
+</style>
+</helmet>
+
+<div style="min-height:100vh; background:#FAF5EE; overflow-x:hidden;">
+
+  <!-- ===== NAV ===== -->
+  <header style="position:sticky; top:0; z-index:50; background:rgba(250,245,238,0.85); backdrop-filter:blur(12px); border-bottom:1px solid #EADFCF;">
+    <div style="max-width:1240px; margin:0 auto; padding:16px 32px; display:flex; align-items:center; gap:36px;">
+      <a href="#top" style="display:flex; align-items:center; gap:11px;">
+        <span style="display:inline-flex;">
+          <svg width="34" height="34" viewBox="0 0 40 40" fill="none" aria-label="WatchMyGate logo">
+            <path d="M20 2.5 L35 8 V20 C35 30 28.5 36 20 38.5 C11.5 36 5 30 5 20 V8 Z" fill="#6E2436"/>
+            <path d="M20 2.5 L35 8 V20 C35 30 28.5 36 20 38.5 C11.5 36 5 30 5 20 V8 Z" stroke="#C8862A" stroke-width="1.4"/>
+            <rect x="13" y="15.5" width="14" height="12" rx="1.2" fill="#E9C77E"/>
+            <path d="M15.5 15.5 V12.5 A4.5 4.5 0 0 1 24.5 12.5 V15.5" stroke="#C8862A" stroke-width="2" fill="none"/>
+            <circle cx="20" cy="20.5" r="2" fill="#6E2436"/>
+            <rect x="19.1" y="21" width="1.8" height="4" rx="0.9" fill="#6E2436"/>
+          </svg>
+        </span>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:20px; letter-spacing:-0.02em; color:#3A2E24;">Watch<span style="color:#6E2436;">My</span>Gate</span>
+      </a>
+      <nav style="display:flex; gap:26px; align-items:center; margin-left:8px;">
+        <a href="#features" style="color:#5C4E40; font-weight:600; font-size:15px;">Product</a>
+        <a href="#roles" style="color:#5C4E40; font-weight:600; font-size:15px;">Solutions</a>
+        <a href="#how" style="color:#5C4E40; font-weight:600; font-size:15px;">How it works</a>
+        <a href="#pricing" style="color:#5C4E40; font-weight:600; font-size:15px;">Pricing</a>
+      </nav>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:14px;">
+        <a href="#" style="color:#3A2E24; font-weight:700; font-size:15px;">Log in</a>
+        <a href="#demo" style="background:#6E2436; color:#FFF; font-weight:700; font-size:15px; padding:11px 20px; border-radius:10px; box-shadow:0 6px 16px rgba(110,36,54,0.22);" style-hover="background:#5A1C2C;">Book a demo</a>
+      </div>
+    </div>
+  </header>
+
+  <div id="top"></div>
+
+  <!-- ===== HERO: SPLIT ===== -->
+  <sc-if value="{{ isSplit }}" hint-placeholder-val="{{ true }}">
+  <section style="max-width:1240px; margin:0 auto; padding:72px 32px 40px; display:grid; grid-template-columns:1.05fr 0.95fr; gap:56px; align-items:center;">
+    <div>
+      <span style="display:inline-flex; align-items:center; gap:8px; background:#F3E7D2; color:#8A5A1E; font-weight:700; font-size:13px; padding:7px 14px; border-radius:999px; letter-spacing:0.01em;">
+        <span style="width:7px; height:7px; border-radius:50%; background:#C8862A; display:inline-block;"></span>
+        Trusted by 5,200+ communities
+      </span>
+      <h1 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:60px; line-height:1.02; letter-spacing:-0.03em; margin:20px 0 0; color:#3A2E24; text-wrap:balance;">
+        Security your community <span style="color:#6E2436;">actually feels.</span>
+      </h1>
+      <p style="font-size:19px; line-height:1.6; color:#6B5C4C; margin:22px 0 0; max-width:520px;">
+        One platform for gate access, visitor approvals, staff attendance and community operations — so residents feel safe and managers stay in control.
+      </p>
+      <div style="display:flex; gap:14px; margin-top:32px; flex-wrap:wrap;">
+        <a href="#demo" style="background:#6E2436; color:#FFF; font-weight:700; font-size:16px; padding:15px 26px; border-radius:12px; box-shadow:0 10px 24px rgba(110,36,54,0.24);">Book a demo</a>
+        <a href="#how" style="background:#FFF; color:#3A2E24; font-weight:700; font-size:16px; padding:15px 26px; border-radius:12px; border:1.5px solid #E4D6C2;">See how it works</a>
+      </div>
+      <div style="display:flex; gap:30px; margin-top:40px;">
+        <div><div style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:28px; color:#6E2436;">2.4M</div><div style="font-size:13.5px; color:#8A7B6B; font-weight:600;">visitors verified / day</div></div>
+        <div style="width:1px; background:#E4D6C2;"></div>
+        <div><div style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:28px; color:#6E2436;">99.9%</div><div style="font-size:13.5px; color:#8A7B6B; font-weight:600;">gate uptime</div></div>
+        <div style="width:1px; background:#E4D6C2;"></div>
+        <div><div style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:28px; color:#6E2436;">18 sec</div><div style="font-size:13.5px; color:#8A7B6B; font-weight:600;">avg. entry approval</div></div>
+      </div>
+    </div>
+    <div style="position:relative;">
+      <div style="position:absolute; inset:-24px; background:radial-gradient(60% 60% at 70% 30%, rgba(200,134,42,0.18), transparent 70%); z-index:0;"></div>
+      <div style="position:relative; z-index:1; border-radius:22px; overflow:hidden; box-shadow:0 30px 60px -20px rgba(58,46,36,0.35); border:1px solid #EADFCF; aspect-ratio:4/5;">
+        <image-slot id="hero-split" shape="rect" fit="cover" placeholder="Drop a hero photo — gated community entrance / app screen"></image-slot>
+      </div>
+      <div style="position:absolute; z-index:2; bottom:24px; left:-28px; background:#FFF; border-radius:16px; padding:14px 18px; box-shadow:0 16px 34px rgba(58,46,36,0.22); display:flex; align-items:center; gap:12px; border:1px solid #EADFCF;">
+        <div style="width:40px; height:40px; border-radius:10px; background:#F3E7D2; display:flex; align-items:center; justify-content:center; font-size:20px;">✅</div>
+        <div><div style="font-weight:800; font-size:14px; color:#3A2E24;">Visitor approved</div><div style="font-size:12.5px; color:#8A7B6B;">Gate A · 2 seconds ago</div></div>
+      </div>
+    </div>
+  </section>
+  </sc-if>
+
+  <!-- ===== HERO: CENTERED ===== -->
+  <sc-if value="{{ isCentered }}" hint-placeholder-val="{{ false }}">
+  <section style="max-width:960px; margin:0 auto; padding:88px 32px 48px; text-align:center;">
+    <span style="display:inline-flex; align-items:center; gap:8px; background:#F3E7D2; color:#8A5A1E; font-weight:700; font-size:13px; padding:7px 14px; border-radius:999px;">
+      <span style="width:7px; height:7px; border-radius:50%; background:#C8862A; display:inline-block;"></span>
+      Trusted by 5,200+ communities
+    </span>
+    <h1 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:72px; line-height:1.0; letter-spacing:-0.035em; margin:24px auto 0; color:#3A2E24; max-width:900px; text-wrap:balance;">
+      Every gate. Every guest. <span style="color:#6E2436;">One calm dashboard.</span>
+    </h1>
+    <p style="font-size:20px; line-height:1.6; color:#6B5C4C; margin:24px auto 0; max-width:620px;">
+      WatchMyGate unifies access control, visitor management, staff attendance and community operations into a single trusted platform.
+    </p>
+    <div style="display:flex; gap:14px; margin-top:34px; justify-content:center; flex-wrap:wrap;">
+      <a href="#demo" style="background:#6E2436; color:#FFF; font-weight:700; font-size:16px; padding:15px 28px; border-radius:12px; box-shadow:0 10px 24px rgba(110,36,54,0.24);">Book a demo</a>
+      <a href="#features" style="background:#FFF; color:#3A2E24; font-weight:700; font-size:16px; padding:15px 28px; border-radius:12px; border:1.5px solid #E4D6C2;">Explore the platform</a>
+    </div>
+    <div style="margin-top:56px; border-radius:24px; overflow:hidden; box-shadow:0 40px 70px -24px rgba(58,46,36,0.4); border:1px solid #EADFCF; aspect-ratio:16/9;">
+      <image-slot id="hero-center" shape="rect" fit="cover" placeholder="Drop a product / dashboard screenshot"></image-slot>
+    </div>
+  </section>
+  </sc-if>
+
+  <!-- ===== HERO: SHOWCASE ===== -->
+  <sc-if value="{{ isShowcase }}" hint-placeholder-val="{{ false }}">
+  <section style="background:#5A1C2C; color:#FBEFDD;">
+    <div style="max-width:1240px; margin:0 auto; padding:80px 32px; display:grid; grid-template-columns:1fr 1fr; gap:48px; align-items:center;">
+      <div>
+        <span style="display:inline-flex; align-items:center; gap:8px; background:rgba(233,199,126,0.16); color:#E9C77E; font-weight:700; font-size:13px; padding:7px 14px; border-radius:999px;">Gated communities · Apartments · Estates</span>
+        <h1 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:62px; line-height:1.02; letter-spacing:-0.03em; margin:20px 0 0; color:#FFF; text-wrap:balance;">
+          The command center for community security.
+        </h1>
+        <p style="font-size:19px; line-height:1.6; color:#E7D4BE; margin:22px 0 0; max-width:520px;">
+          Approve visitors, track staff, manage deliveries and respond to emergencies — all from one place your residents can trust.
+        </p>
+        <div style="display:flex; gap:14px; margin-top:32px; flex-wrap:wrap;">
+          <a href="#demo" style="background:#D99A2B; color:#3A2010; font-weight:800; font-size:16px; padding:15px 26px; border-radius:12px;">Book a demo</a>
+          <a href="#how" style="background:transparent; color:#FBEFDD; font-weight:700; font-size:16px; padding:15px 26px; border-radius:12px; border:1.5px solid rgba(233,199,126,0.4);">See how it works</a>
+        </div>
+      </div>
+      <div style="border-radius:22px; overflow:hidden; box-shadow:0 30px 60px -18px rgba(0,0,0,0.5); border:1px solid rgba(233,199,126,0.25); aspect-ratio:4/5;">
+        <image-slot id="hero-showcase" shape="rect" fit="cover" placeholder="Drop a guard / gate app photo"></image-slot>
+      </div>
+    </div>
+  </section>
+  </sc-if>
+
+  <!-- ===== TRUST BAR ===== -->
+  <section style="border-top:1px solid #EADFCF; border-bottom:1px solid #EADFCF; background:#F6EDDF;">
+    <div style="max-width:1240px; margin:0 auto; padding:26px 32px; display:flex; align-items:center; gap:40px; flex-wrap:wrap; justify-content:center;">
+      <span style="font-size:13px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; color:#9A8770;">Powering communities across</span>
+      <sc-for list="{{ trustLogos }}" as="logo" hint-placeholder-count="6">
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:19px; color:#B29B7F; letter-spacing:-0.01em;">{{ logo }}</span>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- ===== FEATURES ===== -->
+  <section id="features" style="max-width:1240px; margin:0 auto; padding:90px 32px 40px;">
+    <div style="max-width:640px;">
+      <span style="font-size:13px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#C8862A;">One platform</span>
+      <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:44px; line-height:1.08; letter-spacing:-0.025em; margin:12px 0 0; color:#3A2E24;">Everything your gate does, done better.</h2>
+      <p style="font-size:18px; color:#6B5C4C; line-height:1.6; margin:16px 0 0;">Twelve tightly-integrated modules replace the registers, WhatsApp groups and spreadsheets your community runs on today.</p>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:20px; margin-top:44px;">
+      <sc-for list="{{ features }}" as="f" hint-placeholder-count="12">
+        <div style="background:#FFFDF9; border:1px solid #EADFCF; border-radius:18px; padding:26px 24px; transition:transform .18s ease, box-shadow .18s ease;" style-hover="transform:translateY(-4px); box-shadow:0 18px 34px -18px rgba(58,46,36,0.3);">
+          <div style="width:48px; height:48px; border-radius:12px; background:#F3E7D2; display:flex; align-items:center; justify-content:center; font-size:24px;">{{ f.icon }}</div>
+          <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:19px; margin:18px 0 0; color:#3A2E24;">{{ f.title }}</h3>
+          <p style="font-size:14.5px; color:#7A6A5A; line-height:1.55; margin:8px 0 0;">{{ f.desc }}</p>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- ===== HOW IT WORKS ===== -->
+  <section id="how" style="background:#F6EDDF; border-top:1px solid #EADFCF; border-bottom:1px solid #EADFCF; margin-top:70px;">
+    <div style="max-width:1240px; margin:0 auto; padding:84px 32px;">
+      <div style="text-align:center; max-width:640px; margin:0 auto;">
+        <span style="font-size:13px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#C8862A;">A visitor arrives</span>
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:44px; line-height:1.08; letter-spacing:-0.025em; margin:12px 0 0; color:#3A2E24;">Four steps from gate to doorstep.</h2>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:22px; margin-top:52px;">
+        <sc-for list="{{ steps }}" as="s" hint-placeholder-count="4">
+          <div style="position:relative;">
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:15px; color:#FFF; width:34px; height:34px; border-radius:50%; background:#6E2436; display:flex; align-items:center; justify-content:center;">{{ s.n }}</div>
+            <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:20px; margin:16px 0 0; color:#3A2E24;">{{ s.title }}</h3>
+            <p style="font-size:15px; color:#7A6A5A; line-height:1.55; margin:8px 0 0;">{{ s.desc }}</p>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== ROLES ===== -->
+  <section id="roles" style="max-width:1240px; margin:0 auto; padding:90px 32px 30px;">
+    <div style="max-width:640px;">
+      <span style="font-size:13px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#C8862A;">Built for everyone at the gate</span>
+      <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:44px; line-height:1.08; letter-spacing:-0.025em; margin:12px 0 0; color:#3A2E24;">One system, four points of view.</h2>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(2,1fr); gap:22px; margin-top:44px;">
+      <sc-for list="{{ roles }}" as="r" hint-placeholder-count="4">
+        <div style="background:{{ r.bg }}; border:1px solid #EADFCF; border-radius:20px; padding:32px; display:flex; gap:22px; align-items:flex-start;">
+          <div style="width:56px; height:56px; border-radius:14px; background:#FFF; border:1px solid #EADFCF; display:flex; align-items:center; justify-content:center; font-size:28px; flex-shrink:0;">{{ r.icon }}</div>
+          <div>
+            <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:22px; margin:0; color:#3A2E24;">{{ r.title }}</h3>
+            <p style="font-size:15px; color:#6B5C4C; line-height:1.6; margin:8px 0 14px;">{{ r.desc }}</p>
+            <a href="#demo" style="font-weight:700; font-size:14.5px; color:#6E2436;">{{ r.cta }} →</a>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- ===== SOS BAND ===== -->
+  <section style="max-width:1240px; margin:70px auto 0; padding:0 32px;">
+    <div style="background:#5A1C2C; border-radius:24px; padding:52px 48px; display:grid; grid-template-columns:1.2fr 0.8fr; gap:40px; align-items:center; overflow:hidden; position:relative;">
+      <div style="position:absolute; right:-60px; top:-60px; width:260px; height:260px; border-radius:50%; background:radial-gradient(circle, rgba(217,154,43,0.35), transparent 70%);"></div>
+      <div style="position:relative; z-index:1;">
+        <span style="display:inline-flex; align-items:center; gap:8px; background:rgba(233,199,126,0.16); color:#E9C77E; font-weight:700; font-size:13px; padding:7px 14px; border-radius:999px;">Emergency response</span>
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:38px; line-height:1.1; letter-spacing:-0.02em; margin:16px 0 0; color:#FFF;">One tap connects residents, guards and management.</h2>
+        <p style="font-size:17px; color:#E7D4BE; line-height:1.6; margin:14px 0 0; max-width:520px;">SOS alerts broadcast the resident's location to the gate and every nearby responder in real time, with a full audit trail.</p>
+      </div>
+      <div style="position:relative; z-index:1; display:flex; flex-direction:column; gap:12px;">
+        <div style="background:rgba(255,255,255,0.08); border:1px solid rgba(233,199,126,0.25); border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px;"><span style="font-size:22px;">🚨</span><div><div style="color:#FFF; font-weight:700; font-size:15px;">SOS from Flat B-704</div><div style="color:#E7D4BE; font-size:13px;">Broadcast to 3 guards · 0:04</div></div></div>
+        <div style="background:rgba(255,255,255,0.08); border:1px solid rgba(233,199,126,0.25); border-radius:14px; padding:16px 18px; display:flex; align-items:center; gap:14px;"><span style="font-size:22px;">📍</span><div><div style="color:#FFF; font-weight:700; font-size:15px;">Guard en route</div><div style="color:#E7D4BE; font-size:13px;">Tower B lobby · acknowledged</div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== TESTIMONIAL ===== -->
+  <section style="max-width:1000px; margin:80px auto 0; padding:0 32px; text-align:center;">
+    <div style="font-size:26px; color:#C8862A;">★★★★★</div>
+    <blockquote style="font-family:'Bricolage Grotesque',sans-serif; font-weight:500; font-size:32px; line-height:1.3; letter-spacing:-0.015em; color:#3A2E24; margin:18px 0 0; text-wrap:balance;">
+      “We replaced three registers and two WhatsApp groups with WatchMyGate. Approvals that took ten minutes now take ten seconds — and residents finally trust the gate.”
+    </blockquote>
+    <div style="display:flex; align-items:center; justify-content:center; gap:14px; margin-top:28px;">
+      <div style="width:48px; height:48px; border-radius:50%; overflow:hidden; border:1px solid #EADFCF;"><image-slot id="quote-avatar" shape="rect" fit="cover" placeholder="Photo"></image-slot></div>
+      <div style="text-align:left;"><div style="font-weight:800; color:#3A2E24; font-size:15px;">Meera Nair</div><div style="color:#8A7B6B; font-size:13.5px;">Secretary, Palm Grove Residency (480 homes)</div></div>
+    </div>
+  </section>
+
+  <!-- ===== PRICING TEASER ===== -->
+  <section id="pricing" style="max-width:1240px; margin:90px auto 0; padding:0 32px;">
+    <div style="text-align:center; max-width:640px; margin:0 auto;">
+      <span style="font-size:13px; font-weight:800; letter-spacing:0.1em; text-transform:uppercase; color:#C8862A;">Pricing</span>
+      <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:44px; line-height:1.08; letter-spacing:-0.025em; margin:12px 0 0; color:#3A2E24;">Priced per home. Scales with you.</h2>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:22px; margin-top:44px; align-items:stretch;">
+      <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+        <div style="background:{{ p.bg }}; border:{{ p.border }}; border-radius:20px; padding:32px 28px; display:flex; flex-direction:column; position:relative;">
+          <sc-if value="{{ p.popular }}" hint-placeholder-val="{{ false }}"><span style="position:absolute; top:-12px; left:28px; background:#D99A2B; color:#3A2010; font-weight:800; font-size:12px; padding:5px 12px; border-radius:999px;">MOST POPULAR</span></sc-if>
+          <h3 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:22px; margin:0; color:{{ p.ink }};">{{ p.name }}</h3>
+          <div style="margin:14px 0 4px; display:flex; align-items:baseline; gap:6px;"><span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:40px; color:{{ p.ink }};">{{ p.price }}</span><span style="font-size:14px; color:{{ p.muted }};">{{ p.per }}</span></div>
+          <p style="font-size:14.5px; color:{{ p.muted }}; line-height:1.55; margin:6px 0 20px;">{{ p.tagline }}</p>
+          <div style="display:flex; flex-direction:column; gap:11px; margin-bottom:26px;">
+            <sc-for list="{{ p.feats }}" as="ft" hint-placeholder-count="4">
+              <div style="display:flex; gap:10px; align-items:flex-start; font-size:14.5px; color:{{ p.ink }};"><span style="color:{{ p.check }}; font-weight:800;">✓</span><span>{{ ft }}</span></div>
+            </sc-for>
+          </div>
+          <a href="#demo" style="margin-top:auto; text-align:center; background:{{ p.btnBg }}; color:{{ p.btnInk }}; font-weight:700; font-size:15px; padding:13px; border-radius:11px; border:{{ p.btnBorder }};">{{ p.btn }}</a>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <!-- ===== DEMO / CTA ===== -->
+  <section id="demo" style="max-width:1240px; margin:90px auto 0; padding:0 32px;">
+    <div style="background:linear-gradient(135deg,#6E2436,#8A2E42); border-radius:28px; padding:64px 48px; text-align:center; position:relative; overflow:hidden;">
+      <div style="position:absolute; left:50%; top:-40%; width:600px; height:600px; transform:translateX(-50%); background:radial-gradient(circle, rgba(217,154,43,0.25), transparent 60%);"></div>
+      <div style="position:relative; z-index:1;">
+        <h2 style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:48px; line-height:1.05; letter-spacing:-0.03em; color:#FFF; margin:0; text-wrap:balance;">See WatchMyGate at your gate.</h2>
+        <p style="font-size:18px; color:#F3DFC9; margin:16px auto 0; max-width:520px; line-height:1.6;">Book a 20-minute walkthrough. We'll map it to your community and set up a free pilot at one gate.</p>
+        <div style="display:flex; gap:12px; justify-content:center; margin-top:30px; flex-wrap:wrap;">
+          <a href="#" style="background:#D99A2B; color:#3A2010; font-weight:800; font-size:16px; padding:16px 30px; border-radius:12px;">Book a demo</a>
+          <a href="#" style="background:rgba(255,255,255,0.12); color:#FFF; font-weight:700; font-size:16px; padding:16px 30px; border-radius:12px; border:1px solid rgba(255,255,255,0.3);">Talk to sales</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== FOOTER ===== -->
+  <footer style="max-width:1240px; margin:70px auto 0; padding:40px 32px 56px; border-top:1px solid #EADFCF; display:grid; grid-template-columns:1.4fr 1fr 1fr 1fr; gap:32px;">
+    <div>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <svg width="28" height="28" viewBox="0 0 40 40" fill="none"><path d="M20 2.5 L35 8 V20 C35 30 28.5 36 20 38.5 C11.5 36 5 30 5 20 V8 Z" fill="#6E2436"/><rect x="13" y="15.5" width="14" height="12" rx="1.2" fill="#E9C77E"/><path d="M15.5 15.5 V12.5 A4.5 4.5 0 0 1 24.5 12.5 V15.5" stroke="#C8862A" stroke-width="2" fill="none"/></svg>
+        <span style="font-family:'Bricolage Grotesque',sans-serif; font-weight:700; font-size:18px; color:#3A2E24;">WatchMyGate</span>
+      </div>
+      <p style="font-size:14px; color:#8A7B6B; line-height:1.6; margin:14px 0 0; max-width:260px;">Security your community actually feels. Access, visitors, staff and operations in one trusted platform.</p>
+    </div>
+    <sc-for list="{{ footerCols }}" as="col" hint-placeholder-count="3">
+      <div>
+        <div style="font-weight:800; font-size:13px; letter-spacing:0.06em; text-transform:uppercase; color:#9A8770; margin-bottom:14px;">{{ col.title }}</div>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <sc-for list="{{ col.links }}" as="l" hint-placeholder-count="4">
+            <a href="#" style="font-size:14.5px; color:#5C4E40; font-weight:600;">{{ l }}</a>
+          </sc-for>
+        </div>
+      </div>
+    </sc-for>
+  </footer>
+  <div style="max-width:1240px; margin:0 auto; padding:0 32px 40px;">
+    <div style="border-top:1px solid #EADFCF; padding-top:20px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px;">
+      <span style="font-size:13.5px; color:#9A8770;">© 2026 WatchMyGate Technologies. All rights reserved.</span>
+      <span style="font-size:13.5px; color:#9A8770;">Privacy · Terms · Security</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:900},&quot;heroVariant&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Split&quot;,&quot;Centered&quot;,&quot;Showcase&quot;],&quot;default&quot;:&quot;Split&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Landing&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const variant = this.props.heroVariant ?? 'Split';
+    return {
+      isSplit: variant === 'Split',
+      isCentered: variant === 'Centered',
+      isShowcase: variant === 'Showcase',
+      trustLogos: ['Palm Grove', 'Skyline Estates', 'Marina Heights', 'Green Valley RWA', 'The Enclave', 'Orchard Park'],
+      features: [
+        { icon: '🪪', title: 'Visitor management', desc: 'Pre-approve guests, scan QR passes and log every entry with photo and purpose.' },
+        { icon: '🚧', title: 'Gate & entry approval', desc: 'Residents approve or deny arrivals in one tap — no more phone calls to the guard.' },
+        { icon: '👥', title: 'Employee & staff mgmt', desc: 'Onboard maids, drivers and vendors with verified profiles and daily check-in.' },
+        { icon: '📦', title: 'Delivery & courier tracking', desc: 'Track packages from gate to doorstep and collect proof of handover.' },
+        { icon: '🛡️', title: 'Security guard tools', desc: 'A purpose-built guard app for patrols, incident logs and shift handover.' },
+        { icon: '🚨', title: 'Emergency SOS & alerts', desc: 'One-tap panic alerts broadcast location to guards and management instantly.' },
+        { icon: '🏸', title: 'Amenity booking', desc: 'Reserve the clubhouse, courts and halls with automatic conflict handling.' },
+        { icon: '📣', title: 'Community notices', desc: 'Publish circulars, polls and events residents actually read.' },
+        { icon: '🧾', title: 'Maintenance & billing', desc: 'Raise dues, collect payments online and reconcile in a click.' },
+        { icon: '🚗', title: 'Vehicle & parking mgmt', desc: 'Register vehicles, allot slots and flag unauthorised parking automatically.' },
+        { icon: '🕒', title: 'Attendance & payroll', desc: 'Biometric-grade attendance for staff, with payroll-ready timesheets.' },
+        { icon: '📊', title: 'Analytics & reports', desc: 'Live dashboards on footfall, incidents, collections and staff performance.' }
+      ],
+      steps: [
+        { n: '1', title: 'Guest arrives', desc: 'Guard captures the visitor at the gate — or the guest scans a resident-shared pass.' },
+        { n: '2', title: 'Resident is pinged', desc: 'An instant push notification asks the resident to approve or deny in one tap.' },
+        { n: '3', title: 'Gate opens', desc: 'On approval, the barrier lifts and a timed, tracked pass is issued.' },
+        { n: '4', title: 'Logged & audited', desc: 'Every entry and exit is recorded with time, photo and purpose for later review.' }
+      ],
+      roles: [
+        { icon: '🏠', title: 'Residents', desc: 'Approve guests, book amenities, pay dues and raise SOS — from one friendly app.', cta: 'Explore the resident app', bg: '#FFFDF9' },
+        { icon: '🧑‍💼', title: 'Community managers', desc: 'Run the whole society: staff, billing, notices, complaints and reports in one console.', cta: 'See the admin dashboard', bg: '#F6EDDF' },
+        { icon: '💂', title: 'Security guards', desc: 'A simple, fast app for approvals, patrols, deliveries and incident reporting.', cta: 'See the guard app', bg: '#F6EDDF' },
+        { icon: '🏗️', title: 'Developers & agencies', desc: 'Standardise security and reporting across every project and site you operate.', cta: 'Talk to us', bg: '#FFFDF9' }
+      ],
+      plans: [
+        { name: 'Starter', price: '₹29', per: '/home / mo', tagline: 'For small societies getting organised.', bg: '#FFFDF9', border: '1px solid #EADFCF', ink: '#3A2E24', muted: '#8A7B6B', check: '#C8862A', feats: ['Visitor & gate approvals', 'Guard app for 1 gate', 'Community notices', 'Email support'], btn: 'Start free pilot', btnBg: '#FFF', btnInk: '#6E2436', btnBorder: '1.5px solid #E4D6C2', popular: false },
+        { name: 'Community', price: '₹49', per: '/home / mo', tagline: 'The complete platform for growing communities.', bg: '#6E2436', border: '1px solid #6E2436', ink: '#FFF', muted: '#E7D4BE', check: '#E9C77E', feats: ['Everything in Starter', 'Unlimited gates & staff mgmt', 'Billing, payroll & amenities', 'SOS & analytics', 'Priority support'], btn: 'Book a demo', btnBg: '#D99A2B', btnInk: '#3A2010', btnBorder: 'none', popular: true },
+        { name: 'Enterprise', price: 'Custom', per: '', tagline: 'For developers and security agencies at scale.', bg: '#FFFDF9', border: '1px solid #EADFCF', ink: '#3A2E24', muted: '#8A7B6B', check: '#C8862A', feats: ['Multi-site management', 'Custom integrations & API', 'Dedicated success manager', 'SLA & onboarding'], btn: 'Contact sales', btnBg: '#FFF', btnInk: '#6E2436', btnBorder: '1.5px solid #E4D6C2', popular: false }
+      ],
+      footerCols: [
+        { title: 'Product', links: ['Visitor management', 'Guard app', 'Admin dashboard', 'Resident app', 'Pricing'] },
+        { title: 'Solutions', links: ['Apartments', 'Gated estates', 'Developers', 'Security agencies'] },
+        { title: 'Company', links: ['About', 'Careers', 'Contact', 'Security & privacy'] }
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

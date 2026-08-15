@@ -40,7 +40,7 @@ export function Shell({
     // sessionStorage is unavailable during the static export's prerender, so the check
     // has to happen after mount rather than during render.
     if (!session.isSignedIn()) {
-      router.replace("/");
+      router.replace("/login/");
       return;
     }
     setReady(true);
@@ -79,7 +79,7 @@ export function Shell({
             type="button"
             onClick={() => {
               session.clear();
-              router.replace("/");
+              router.replace("/login/");
             }}
             style={{ width: "100%" }}
           >
