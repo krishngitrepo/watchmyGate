@@ -286,7 +286,21 @@ async function main() {
   check("complaint is raised and gets a ticket number",
     Boolean(ticket.body.ticketNumber),
     JSON.stringify(ticket.body).slice(0, 250));
-  check("SLA timer starts on creation", Boolean(ticket.body.slaDueAt));
+
+  // The create response returns only { id, ticketNumber, merged }, so the SLA is read
+  // back rather than assumed. Worth checking the actual duration, not just presence:
+  // the "Lighting" category is seeded at 8 hours, and a timer that starts but uses the
+  // wrong deadline is the kind of thing nobody notices until an escalation never fires.
+  const raised = await api(`/v1/tickets/${ticket.body.id}`, { token: residentToken });
+  const slaHours =
+    (new Date(raised.body.slaDueAt) - new Date(raised.body.createdAt)) / 3_600_000;
+  check("SLA timer starts on creation", Boolean(raised.body.slaDueAt));
+  check("SLA deadline matches the category's 8-hour target",
+    Math.abs(slaHours - 8) < 0.1, `got ${slaHours.toFixed(2)}h`);
+  const escalationHours =
+    (new Date(raised.body.escalationDueAt) - new Date(raised.body.createdAt)) / 3_600_000;
+  check("escalation is scheduled after the SLA, at 16 hours",
+    Math.abs(escalationHours - 16) < 0.1, `got ${escalationHours.toFixed(2)}h`);
 
   const presign = await api(`/v1/tickets/${ticket.body.id}/attachments/presign`, {
     method: "POST",
@@ -316,6 +330,29 @@ async function main() {
   const crossToken = await login("+919900000003", societyId);
   const crossRead = await api(`/v1/gate/approvals/${approvalId}`, { token: crossToken });
   check("own society's approval is readable", crossRead.status === 200);
+
+  /**
+   * The authorization hole this run found.
+   *
+   * Login accepted any societyId and issued a session scoped to it with an empty roles
+   * array. Role-gated endpoints refused that token, but every endpoint relying on tenant
+   * scoping alone — listing complaints, for one — would have served another society's
+   * data quite happily. An empty roles array reads as "no permissions" but actually
+   * meant "not a member", and those are not the same thing.
+   */
+  await api("/v1/auth/otp/request", { method: "POST", body: { phone: "+919900000003" } });
+  await new Promise((r) => setTimeout(r, 400));
+  const stolen = await api("/v1/auth/otp/verify", {
+    method: "POST",
+    body: {
+      phone: "+919900000003",
+      code: latestOtp("+919900000003"),
+      societyId: otherId, // a real society the guard has no role in
+    },
+  });
+  check("cannot obtain a token for a society you are not a member of",
+    stolen.status === 403 && !stolen.body.accessToken,
+    `status=${stolen.status} ${JSON.stringify(stolen.body).slice(0, 150)}`);
 
   await db.query("DELETE FROM societies WHERE id = $1", [otherId]);
 

@@ -45,7 +45,10 @@ export class AuthController {
     const phone = this.auth.normalisePhone(input.phone);
 
     const { personId } = await this.auth.verifyOtp(phone, input.code);
-    const roles = await this.auth.rolesFor(personId, input.societyId ?? null);
+    // Refusing variant: a caller must not receive a session scoped to a society they
+    // hold no active role in. See rolesForOrRefuse for why an empty roles array is not
+    // a safe substitute for that check.
+    const roles = await this.auth.rolesForOrRefuse(personId, input.societyId ?? null);
 
     return this.auth.createSession(personId, {
       societyId: input.societyId ?? null,

@@ -19,6 +19,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "db:generate": "npm run generate -w @watchmygate/db",
     "db:migrate": "npm run migrate -w @watchmygate/db",
+    "db:seed": "node --env-file-if-exists=.env --experimental-strip-types packages/db/src/seed.ts",
+    "e2e": "node --env-file-if-exists=.env scripts/e2e-smoke.mjs",
     "api:dev": "npm run dev -w @watchmygate/api",
     "admin:dev": "npm run dev -w @watchmygate/web-admin",
     "admin:build": "npm run build -w @watchmygate/web-admin",

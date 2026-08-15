@@ -21,11 +21,12 @@ import { and, desc, eq, gt, isNull, ne, sql } from "drizzle-orm";
 import { SignJWT, jwtVerify } from "jose";
 import { parsePhoneNumberWithError } from "libphonenumber-js";
 
-import { schema, withoutTenant } from "@watchmygate/db";
+import { schema, withTenant, withoutTenant } from "@watchmygate/db";
 
 import { loadConfig } from "../../common/config.js";
 import {
   AuthenticationError,
+  ForbiddenError,
   RateLimitError,
   ValidationError,
 } from "../../common/errors.js";
@@ -191,11 +192,22 @@ export class AuthService {
     });
   }
 
-  /** Active role codes for a person within one society. */
+  /**
+   * Active role codes for a person within one society.
+   *
+   * Scoped with `withTenant`, not `withoutTenant`. `role_assignments` carries a
+   * `society_id` and is RLS-protected, so an unscoped read matches the policy against a
+   * NULL setting and returns **zero rows** — silently, with no error. Every token then
+   * carried an empty roles array and every role-gated endpoint returned 403.
+   *
+   * Scoping here is also correct on the merits: we are asking what this person may do
+   * *inside a named society*, so the query belongs inside that society's scope and RLS
+   * stays in force rather than being stepped around.
+   */
   async rolesFor(personId: string, societyId: string | null): Promise<string[]> {
     if (!societyId) return [];
 
-    return withoutTenant("auth_role_lookup", async (db) => {
+    return withTenant(societyId, async (db) => {
       const rows = await db
         .select({ code: schema.roles.code })
         .from(schema.roleAssignments)
@@ -209,6 +221,32 @@ export class AuthService {
         );
       return rows.map((r) => r.code);
     });
+  }
+
+  /**
+   * Roles for a society, refusing to hand out a token for one the person is not in.
+   *
+   * Without this check, a caller could pass any societyId at login and receive a
+   * session scoped to it with an empty roles array. Endpoints that gate on a role would
+   * refuse them, but the many that only rely on tenant scoping — listing complaints,
+   * for one — would happily serve another society's data. The empty roles array reads
+   * as "no permissions" while actually meaning "no membership", and those are very
+   * different things.
+   */
+  async rolesForOrRefuse(
+    personId: string,
+    societyId: string | null,
+  ): Promise<string[]> {
+    if (!societyId) return [];
+
+    const roles = await this.rolesFor(personId, societyId);
+    if (roles.length === 0) {
+      // Deliberately identical to the message for a society that does not exist:
+      // confirming existence would make this a "does this society use WatchMyGate"
+      // oracle for anyone who can log in.
+      throw new ForbiddenError("You do not have access to that society.");
+    }
+    return roles;
   }
 
   async createSession(
@@ -323,7 +361,7 @@ export class AuthService {
       },
     );
 
-    const roles = await this.rolesFor(personId, opts.societyId ?? null);
+    const roles = await this.rolesForOrRefuse(personId, opts.societyId ?? null);
     const { accessToken, expiresIn } = await this.issueAccessToken({
       personId,
       sessionId,
@@ -367,24 +405,25 @@ export class AuthService {
     personId: string,
   ): Promise<Array<{ societyId: string; societyName: string; roles: string[] }>> {
     return withoutTenant("membership_list", async (db) => {
-      const rows = await db
-        .select({
-          societyId: schema.roleAssignments.societyId,
-          societyName: schema.societies.name,
-          code: schema.roles.code,
-        })
-        .from(schema.roleAssignments)
-        .innerJoin(schema.roles, eq(schema.roles.id, schema.roleAssignments.roleId))
-        .innerJoin(
-          schema.societies,
-          eq(schema.societies.id, schema.roleAssignments.societyId),
-        )
-        .where(
-          and(
-            eq(schema.roleAssignments.personId, personId),
-            isNull(schema.roleAssignments.validTo),
-          ),
-        );
+      // Goes through the SECURITY DEFINER function from migration 0005 rather than
+      // reading role_assignments directly.
+      //
+      // This is the one query that genuinely cannot be tenant-scoped — it runs before a
+      // society has been chosen, and answering it is how the caller chooses one. A
+      // direct read would be filtered to nothing by RLS, exactly as rolesFor was. The
+      // alternative fixes (BYPASSRLS on the app role, or a wider policy) would both
+      // trade a system-wide guarantee for one lookup.
+      const result = await db.execute<{
+        society_id: string;
+        society_name: string;
+        role_code: string;
+      }>(sql`SELECT * FROM person_memberships(${personId}::uuid)`);
+
+      const rows = result.rows.map((r) => ({
+        societyId: r.society_id,
+        societyName: r.society_name,
+        code: r.role_code,
+      }));
 
       const grouped = new Map<string, { societyName: string; roles: string[] }>();
       for (const row of rows) {
