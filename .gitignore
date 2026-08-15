@@ -59,3 +59,6 @@ Thumbs.db
 
 # npm workspace lockfile is committed; installed trees are not
 package-lock.json.bak
+
+# Stubbed OTP written by the SMS service in local development.
+.otp-stub.json

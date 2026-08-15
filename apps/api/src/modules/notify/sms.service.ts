@@ -11,6 +11,9 @@
  * ship by accident.
  */
 
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { Injectable } from "@nestjs/common";
 
 import { loadConfig } from "../../common/config.js";
@@ -40,6 +43,7 @@ export class SmsService {
           detail: "Stub mode — no SMS sent. Use this code to log in.",
         }),
       );
+      this.writeStubFile(phone, code);
       return;
     }
 
@@ -77,6 +81,34 @@ export class SmsService {
       sender: this.config.MSG91_SENDER_ID,
       recipients: [{ mobiles: phone.replace(/^\+/, ""), ...variables }],
     });
+  }
+
+  /**
+   * Record the stubbed OTP where a test can read it deterministically.
+   *
+   * The end-to-end suite previously scraped this out of the API's stdout log, which
+   * coupled it to whichever file the process happened to be started with — change the
+   * log path and every login in the suite fails with a confusing error. A known file is
+   * deterministic and survives the API being restarted anywhere.
+   *
+   * Guarded three ways so it can never run outside local development: stub mode only
+   * (a real MSG91 key means this is never reached), never in production, and any write
+   * failure is swallowed. It is a development convenience, not a feature.
+   */
+  private writeStubFile(phone: string, code: string): void {
+    if (this.config.isProduction) return;
+
+    try {
+      const target =
+        process.env.OTP_STUB_FILE ?? join(process.cwd(), "..", "..", ".otp-stub.json");
+      writeFileSync(
+        target,
+        JSON.stringify({ phone, code, at: new Date().toISOString() }),
+        "utf8",
+      );
+    } catch {
+      // A test convenience must never break the login it is helping to test.
+    }
   }
 
   private async post(url: string, body: unknown): Promise<void> {

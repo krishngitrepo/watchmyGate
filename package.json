@@ -25,7 +25,8 @@
     "admin:dev": "npm run dev -w @watchmygate/web-admin",
     "admin:build": "npm run build -w @watchmygate/web-admin",
     "desktop:dev": "cd apps/desktop && npm run tauri dev",
-    "desktop:build": "cd apps/desktop && npm run tauri build"
+    "desktop:build": "cd apps/desktop && npm run tauri build",
+    "worker:dev": "npm run dev -w @watchmygate/worker"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

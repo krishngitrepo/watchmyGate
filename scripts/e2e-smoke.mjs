@@ -17,7 +17,15 @@ import { readFileSync } from "node:fs";
 import pg from "pg";
 
 const API = process.env.E2E_API ?? `http://localhost:${process.env.PORT ?? 8080}`;
-const API_LOG = process.env.E2E_API_LOG ?? "/tmp/api4.log";
+
+/**
+ * Where the SMS stub records the last OTP it "sent".
+ *
+ * This used to scrape the API's stdout log, which coupled the whole suite to whichever
+ * file the API process happened to be started with — start it elsewhere and every login
+ * failed with an unhelpful ENOENT. A known file written by the stub is deterministic.
+ */
+const OTP_FILE = process.env.OTP_STUB_FILE ?? ".otp-stub.json";
 
 let passed = 0;
 let failed = 0;
@@ -51,13 +59,23 @@ async function api(path, { method = "GET", token, body } = {}) {
   return { status: response.status, body: json };
 }
 
-/** Read the OTP the SMS stub wrote to the API log. */
+/** Read the OTP the SMS stub just recorded. */
 function latestOtp(phone) {
-  const log = readFileSync(API_LOG, "utf8");
-  const lines = log.split("\n").filter((l) => l.includes("sms_stub_otp") && l.includes(phone));
-  const last = lines.at(-1);
-  if (!last) throw new Error(`No stub OTP found for ${phone} in ${API_LOG}`);
-  return JSON.parse(last.slice(last.indexOf("{"))).code;
+  let record;
+  try {
+    record = JSON.parse(readFileSync(OTP_FILE, "utf8"));
+  } catch {
+    throw new Error(
+      `No stubbed OTP at ${OTP_FILE}. Is the API running with MSG91 credentials blank?`,
+    );
+  }
+
+  // Assert the code belongs to the number we just requested for, so a stale file from
+  // an earlier run cannot make a failing login look like it passed.
+  if (record.phone !== phone) {
+    throw new Error(`Stubbed OTP is for ${record.phone}, expected ${phone}.`);
+  }
+  return record.code;
 }
 
 async function login(phone, societyId) {
