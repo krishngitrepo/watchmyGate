@@ -35,9 +35,13 @@ export type SourceType =
 /** One side of a journal entry. */
 export interface Posting {
   accountCode: string;
-  debit?: Money;
-  credit?: Money;
-  unitId?: string;
+  // `| undefined` throughout: tsconfig sets exactOptionalPropertyTypes, under which an
+  // optional property and one that may hold undefined are different types. Callers
+  // build postings by spreading optional fields, so they need the latter.
+  debit?: Money | undefined;
+  credit?: Money | undefined;
+  /** Present for charges attributable to a flat; absent for society-level entries. */
+  unitId?: string | undefined;
 }
 
 export interface PostEntryInput {

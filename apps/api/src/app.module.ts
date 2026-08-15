@@ -15,6 +15,10 @@ import { HelpdeskController } from "./modules/helpdesk/helpdesk.controller.js";
 import { InternalController } from "./modules/internal/internal.controller.js";
 import { HelpdeskService } from "./modules/helpdesk/helpdesk.service.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
+import { PaymentsController } from "./modules/payments/payments.controller.js";
+import { PaymentsService } from "./modules/payments/payments.service.js";
+import { SocietyController } from "./modules/society/society.controller.js";
+import { SocietyService } from "./modules/society/society.service.js";
 import { SmsService } from "./modules/notify/sms.service.js";
 
 /**
@@ -32,6 +36,8 @@ import { SmsService } from "./modules/notify/sms.service.js";
     HelpdeskController,
     GateController,
     InternalController,
+    SocietyController,
+    PaymentsController,
   ],
   providers: [
     AuthService,
@@ -43,6 +49,8 @@ import { SmsService } from "./modules/notify/sms.service.js";
     HelpdeskService,
     GateService,
     ApprovalService,
+    SocietyService,
+    PaymentsService,
   ],
 })
 export class AppModule implements NestModule {

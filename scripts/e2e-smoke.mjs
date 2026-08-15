@@ -337,6 +337,135 @@ async function main() {
   check("cannot resolve without a proof-of-fix photo", resolveTooEarly.status === 422,
     `status=${resolveTooEarly.status}`);
 
+  // ------------------------------------------------------ society admin
+  console.log("\nsociety administration");
+  const adminToken = await login("+919900000001", societyId);
+
+  const summary = await api("/v1/society/summary", { token: adminToken });
+  check("committee dashboard summary loads", summary.status === 200 && summary.body.units > 0,
+    JSON.stringify(summary.body).slice(0, 200));
+  check("outstanding dues are strings, never floats",
+    typeof summary.body.outstanding === "string",
+    `got ${typeof summary.body.outstanding}`);
+
+  const towers = await api("/v1/society/towers", { token: adminToken });
+  check("towers list", Array.isArray(towers.body) && towers.body.length >= 2);
+
+  // A resident must not be able to reshape the society.
+  const residentTower = await api("/v1/society/towers", {
+    method: "POST",
+    token: residentToken,
+    body: { name: `Sneaky ${randomUUID().slice(0, 6)}` },
+  });
+  check("a resident cannot create a tower", residentTower.status === 403,
+    `status=${residentTower.status}`);
+
+  // Nor grant themselves a role — the classic privilege-escalation path.
+  const residentGrant = await api("/v1/society/roles", {
+    method: "POST",
+    token: residentToken,
+    body: { phone: "+919900000002", roleCode: "society_admin" },
+  });
+  check("a resident cannot grant themselves admin", residentGrant.status === 403,
+    `status=${residentGrant.status}`);
+
+  const newTower = await api("/v1/society/towers", {
+    method: "POST",
+    token: adminToken,
+    body: { name: `Tower E2E ${randomUUID().slice(0, 6)}`, floors: 8 },
+  });
+  check("admin can create a tower", Boolean(newTower.body.id),
+    JSON.stringify(newTower.body).slice(0, 200));
+
+  const bulk = await api("/v1/society/units/bulk", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      units: [
+        { towerId: newTower.body.id, number: "E-101", floor: 1, carpetAreaSqft: "1000.00", bhk: 2 },
+        { towerId: newTower.body.id, number: "E-102", floor: 1, carpetAreaSqft: "1400.00", bhk: 3 },
+        { towerId: newTower.body.id, number: "E-101", floor: 1 }, // deliberate duplicate
+      ],
+    },
+  });
+  check("bulk import creates the good rows and reports the bad one",
+    bulk.body.created === 2 && bulk.body.skipped?.length === 1,
+    JSON.stringify(bulk.body).slice(0, 250));
+
+  // Occupancy: the owner votes, the tenant pays.
+  const e2eUnits = await api(`/v1/society/units?towerId=${newTower.body.id}`, { token: adminToken });
+  const e101 = e2eUnits.body.find((u) => u.number === "E-101");
+
+  await api("/v1/society/occupancies", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      unitId: e101.id, phone: "+919900000077", name: "Owner Abroad",
+      relationship: "owner", isBillingLiable: false, hasVotingRight: true,
+      hasAppAccess: true, validFrom: "2026-01-01",
+    },
+  });
+  await api("/v1/society/occupancies", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      unitId: e101.id, phone: "+919900000078", name: "Tenant Paying",
+      relationship: "tenant", isBillingLiable: true, hasVotingRight: false,
+      hasAppAccess: true, validFrom: "2026-03-01",
+    },
+  });
+
+  const occupants = await api(`/v1/society/units/${e101.id}/occupants`, { token: adminToken });
+  const owner = occupants.body.find((o) => o.relationship === "owner");
+  const tenant = occupants.body.find((o) => o.relationship === "tenant");
+  check("owner votes but does not pay", owner?.hasVotingRight === true && owner?.isBillingLiable === false);
+  check("tenant pays but does not vote", tenant?.isBillingLiable === true && tenant?.hasVotingRight === false);
+
+  /**
+   * The reason occupancy is bitemporal. Asked as of February — before the tenant moved
+   * in — the tenant must not appear. This is the question a disputed invoice raises.
+   */
+  const inFebruary = await api(
+    `/v1/society/units/${e101.id}/occupants?on=2026-02-15`,
+    { token: adminToken },
+  );
+  check("asking 'who lived here in February' excludes the March tenant",
+    inFebruary.body.length === 1 && inFebruary.body[0].relationship === "owner",
+    JSON.stringify(inFebruary.body.map((o) => o.relationship)));
+
+  // ------------------------------------------------------------- payments
+  console.log("\npayments");
+  const unsignedHook = await api("/v1/payments/webhook/razorpay", {
+    method: "POST",
+    body: { event: "payment.captured" },
+  });
+  check("webhook rejects an unsigned payload", unsignedHook.status === 401,
+    `status=${unsignedHook.status}`);
+
+  const destinations = await api("/v1/payments/destinations", { token: adminToken });
+  check("payment destinations list", destinations.status === 200);
+
+  const leakyDestination = await api("/v1/payments/destinations", {
+    method: "POST",
+    token: adminToken,
+    body: {
+      payeeType: "society", payeeId: societyId, mode: "route_linked",
+      merchantId: "acc_TEST123",
+      credentialsSecretRef: "rzp_live_actualsecretkey", // a credential, not a reference
+    },
+  });
+  check("refuses a raw credential where a Secret Manager reference belongs",
+    leakyDestination.status === 422,
+    `status=${leakyDestination.status}`);
+
+  const residentDestination = await api("/v1/payments/destinations", {
+    method: "POST",
+    token: residentToken,
+    body: { payeeType: "society", payeeId: societyId, mode: "route_linked" },
+  });
+  check("a resident cannot add a payout destination", residentDestination.status === 403,
+    `status=${residentDestination.status}`);
+
   // ------------------------------------------------------ tenant isolation
   console.log("\ntenant isolation over HTTP");
   const otherSociety = await db.query(
@@ -373,6 +502,36 @@ async function main() {
     `status=${stolen.status} ${JSON.stringify(stolen.body).slice(0, 150)}`);
 
   await db.query("DELETE FROM societies WHERE id = $1", [otherId]);
+
+  // ------------------------------------------------------------- teardown
+  //
+  // Sweeps EVERY "Tower E2E%" and both test residents, not just the ones this run made.
+  // Runs before the cleanup existed left rows behind, and those older occupancies still
+  // referenced the test persons — so a delete scoped to this run's tower hit a foreign
+  // key from a previous one. Cleanup that only knows about its own run is cleanup that
+  // eventually stops working.
+  await db.query("SELECT set_config('app.society_id', $1, false)", [societyId]);
+
+  const testPhones = ["+919900000077", "+919900000078"];
+
+  await db.query(
+    `DELETE FROM unit_occupancies
+      WHERE unit_id IN (SELECT id FROM units WHERE tower_id IN (
+              SELECT id FROM towers WHERE name LIKE 'Tower E2E%'))
+         OR person_id IN (SELECT id FROM persons WHERE phone = ANY($1::text[]))`,
+    [testPhones],
+  );
+  await db.query(
+    `DELETE FROM units WHERE tower_id IN (
+       SELECT id FROM towers WHERE name LIKE 'Tower E2E%')`,
+  );
+  await db.query("DELETE FROM towers WHERE name LIKE 'Tower E2E%'");
+  await db.query("DELETE FROM persons WHERE phone = ANY($1::text[])", [testPhones]);
+
+  const { rows: leftover } = await db.query(
+    "SELECT count(*)::int n FROM towers WHERE name LIKE 'Tower E2E%'",
+  );
+  check("suite cleans up after itself", leftover[0].n === 0, `${leftover[0].n} left behind`);
 
   await db.end();
 

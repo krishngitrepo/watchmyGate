@@ -15,6 +15,9 @@ const PUBLIC_PATHS = [
   "/v1/auth/otp/request",
   "/v1/auth/otp/verify",
   "/v1/auth/refresh",
+  // Razorpay cannot present a session, so this route is public and its HMAC signature
+  // is the entire security boundary. See payments.controller.ts.
+  "/v1/payments/webhook/razorpay",
 ];
 
 /** Authenticated, but usable before a society has been chosen. */

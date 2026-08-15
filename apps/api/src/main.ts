@@ -54,7 +54,11 @@ export const logger = pino({
 async function bootstrap(): Promise<void> {
   initDatabase(config.DATABASE_URL);
 
-  const app = await NestFactory.create(AppModule, { logger: false });
+  // rawBody: the Razorpay webhook HMAC is computed over the exact bytes sent.
+  // JSON.parse followed by JSON.stringify does not round-trip byte-for-byte — key
+  // order, whitespace and unicode escaping all shift — so verifying a re-serialised
+  // body fails unpredictably. Nest keeps the original buffer when asked.
+  const app = await NestFactory.create(AppModule, { logger: false, rawBody: true });
   app.useGlobalFilters(new AppExceptionFilter());
   app.enableShutdownHooks();
 
