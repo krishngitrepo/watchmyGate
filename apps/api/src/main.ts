@@ -59,6 +59,30 @@ async function bootstrap(): Promise<void> {
   // order, whitespace and unicode escaping all shift — so verifying a re-serialised
   // body fails unpredictably. Nest keeps the original buffer when asked.
   const app = await NestFactory.create(AppModule, { logger: false, rawBody: true });
+
+  /**
+   * CORS for the admin console and the Tauri desktop shell.
+   *
+   * Both are separate origins from the API, so without this every browser call fails
+   * on the preflight — and the console shows an empty page with a console error most
+   * users will never see.
+   *
+   * An explicit allowlist rather than `origin: true`. Reflecting whatever Origin is
+   * presented means any website a committee member visits can call this API with their
+   * session; the credentials mode below is exactly what makes that dangerous.
+   *
+   * `tauri://localhost` and `http://tauri.localhost` are the desktop shell's origins on
+   * macOS/Linux and Windows respectively.
+   */
+  app.enableCors({
+    origin: config.CORS_ORIGINS,
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization", "x-request-id", "x-service-token"],
+    exposedHeaders: ["x-request-id"],
+    maxAge: 86_400,
+  });
+
   app.useGlobalFilters(new AppExceptionFilter());
   app.enableShutdownHooks();
 

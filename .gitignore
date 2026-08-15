@@ -62,3 +62,7 @@ package-lock.json.bak
 
 # Stubbed OTP written by the SMS service in local development.
 .otp-stub.json
+
+# Next.js static export output
+apps/web-admin/out/
+apps/web-admin/.next/

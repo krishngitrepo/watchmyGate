@@ -1,0 +1,624 @@
+/*
+ * WatchMyGate console — "the register".
+ *
+ * Indian housing societies have kept their accounts in ruled register books for
+ * decades: cream paper, ink columns, a red pen for arrears. The committee members and
+ * part-time accountants who use this have read those books their whole lives. Echoing
+ * that is not nostalgia — it is the visual language they already trust, and it reads as
+ * authoritative in a way another flat SaaS dashboard does not.
+ *
+ * So: warm paper, ruled rows, serif headings with weight, and money set in tabular
+ * figures that line up down the column exactly as they would in ink.
+ *
+ * Restraint is the point. A treasurer of 65 reading a defaulter list needs contrast and
+ * alignment, not motion. The only animation here is a page-load settle.
+ *
+ * Fonts are system stacks, deliberately. Tauri's CSP blocks external hosts, so a font
+ * CDN would simply fail to load in the desktop build and silently fall back — better to
+ * choose good stacks that are actually present. Palatino and Iowan Old Style carry real
+ * character and are nothing like the Inter/Roboto default.
+ */
+
+:root {
+  /* Paper and ink */
+  --paper: #f6f2e9;
+  --paper-raised: #fffdf7;
+  --paper-sunk: #ece6d8;
+  --ink: #1c1917;
+  --ink-soft: #57534e;
+  --ink-faint: #8a8378;
+
+  /* Ruled lines, as on the page */
+  --rule: #d9d0bd;
+  --rule-strong: #b8ab90;
+
+  /* The red pen is reserved for money owed. Using it anywhere else would dilute the
+     one signal that must never be missed. */
+  --arrears: #a8321e;
+  --arrears-bg: #f7e6e1;
+  --settled: #2f6b46;
+  --settled-bg: #e2eee6;
+  --pending: #8a6414;
+  --pending-bg: #f6ecd6;
+
+  /* The society's ink stamp — used sparingly, for identity only */
+  --stamp: #1b4d6b;
+
+  --shadow-page: 0 1px 2px rgba(28, 25, 23, 0.05), 0 8px 24px -12px rgba(28, 25, 23, 0.18);
+  --shadow-raised: 0 1px 0 var(--rule), 0 2px 8px -4px rgba(28, 25, 23, 0.12);
+
+  --font-display: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Palatino,
+    Georgia, "Times New Roman", serif;
+  --font-body: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica,
+    sans-serif;
+  /* Tabular figures: money must align down a column or it cannot be scanned. */
+  --font-figure: "Cascadia Mono", "SF Mono", "Consolas", "DejaVu Sans Mono", "Menlo",
+    monospace;
+
+  --radius: 3px;
+  --rail: 232px;
+}
+
+/* Night shift at the gate, and accountants who work late. Same register, different
+   lamp: the paper darkens, the ink lightens, the red pen stays red. */
+:root:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --paper: #16150f;
+    --paper-raised: #1e1c16;
+    --paper-sunk: #100f0b;
+    --ink: #f0ebdd;
+    --ink-soft: #b0a894;
+    --ink-faint: #7d7666;
+    --rule: #33302a;
+    --rule-strong: #4a463d;
+    --arrears: #e8836c;
+    --arrears-bg: #3a1f18;
+    --settled: #7dbd95;
+    --settled-bg: #172c1f;
+    --pending: #d6ac5a;
+    --pending-bg: #2e2410;
+    --stamp: #7fb4d4;
+    --shadow-page: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+    --shadow-raised: 0 1px 0 var(--rule), 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper: #16150f;
+  --paper-raised: #1e1c16;
+  --paper-sunk: #100f0b;
+  --ink: #f0ebdd;
+  --ink-soft: #b0a894;
+  --ink-faint: #7d7666;
+  --rule: #33302a;
+  --rule-strong: #4a463d;
+  --arrears: #e8836c;
+  --arrears-bg: #3a1f18;
+  --settled: #7dbd95;
+  --settled-bg: #172c1f;
+  --pending: #d6ac5a;
+  --pending-bg: #2e2410;
+  --stamp: #7fb4d4;
+  --shadow-page: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.6);
+  --shadow-raised: 0 1px 0 var(--rule), 0 2px 8px -4px rgba(0, 0, 0, 0.5);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--paper);
+  /* The faint tooth of laid paper. Two hairline gradients, no image asset. */
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 27px,
+      color-mix(in srgb, var(--rule) 22%, transparent) 27px,
+      color-mix(in srgb, var(--rule) 22%, transparent) 28px
+    );
+  background-attachment: fixed;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+
+h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+}
+h2 {
+  font-size: 1.15rem;
+}
+
+a {
+  color: inherit;
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail) 1fr;
+  min-height: 100vh;
+}
+
+.rail {
+  background: var(--paper-sunk);
+  border-right: 1px solid var(--rule-strong);
+  padding: 22px 0 18px;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+
+.rail-mark {
+  padding: 0 20px 18px;
+  border-bottom: 1px solid var(--rule);
+  margin-bottom: 10px;
+}
+
+.rail-mark .society {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.25;
+  display: block;
+}
+
+.rail-mark .product {
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  display: block;
+  margin-top: 3px;
+}
+
+.rail nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 10px;
+  flex: 1;
+}
+
+.rail nav a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  border-left: 2px solid transparent;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.rail nav a:hover {
+  background: color-mix(in srgb, var(--rule) 35%, transparent);
+  color: var(--ink);
+}
+
+.rail nav a[data-active="true"] {
+  background: var(--paper-raised);
+  color: var(--ink);
+  border-left-color: var(--stamp);
+  font-weight: 600;
+  box-shadow: var(--shadow-raised);
+}
+
+.rail-foot {
+  padding: 12px 20px 0;
+  border-top: 1px solid var(--rule);
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+.main {
+  padding: 26px 32px 64px;
+  max-width: 1360px;
+  min-width: 0;
+}
+
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 14px;
+  margin-bottom: 22px;
+  border-bottom: 2px solid var(--rule-strong);
+}
+
+.page-head p {
+  margin: 5px 0 0;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  max-width: 62ch;
+}
+
+/* -------------------------------------------------------------- figures */
+
+.figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule-strong);
+  margin-bottom: 26px;
+}
+
+.figure {
+  background: var(--paper-raised);
+  padding: 14px 16px 15px;
+}
+
+.figure dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 7px;
+}
+
+.figure dd {
+  margin: 0;
+  font-family: var(--font-figure);
+  font-size: 1.45rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+
+.figure dd small {
+  font-size: 0.72rem;
+  color: var(--ink-faint);
+  font-family: var(--font-body);
+  letter-spacing: 0;
+  display: block;
+  margin-top: 4px;
+}
+
+.figure[data-tone="arrears"] dd {
+  color: var(--arrears);
+}
+.figure[data-tone="settled"] dd {
+  color: var(--settled);
+}
+
+/* --------------------------------------------------------------- ledger */
+
+.ledger {
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  box-shadow: var(--shadow-page);
+  margin-bottom: 26px;
+  overflow: hidden;
+}
+
+.ledger-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--paper-sunk);
+}
+
+.ledger-head h2 {
+  font-size: 1rem;
+}
+
+.ledger-head .note {
+  font-size: 0.75rem;
+  color: var(--ink-faint);
+}
+
+/* Wide tables scroll inside their own frame; the page itself never scrolls sideways. */
+.ledger-scroll {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+thead th {
+  text-align: left;
+  font-size: 0.66rem;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--rule-strong);
+  white-space: nowrap;
+  background: var(--paper-sunk);
+  position: sticky;
+  top: 0;
+}
+
+tbody td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--rule);
+  vertical-align: top;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+tbody tr:hover td {
+  background: color-mix(in srgb, var(--rule) 22%, transparent);
+}
+
+/* Money and any figure that must be compared down a column. */
+.num {
+  font-family: var(--font-figure);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.num[data-tone="arrears"] {
+  color: var(--arrears);
+  font-weight: 600;
+}
+
+.muted {
+  color: var(--ink-faint);
+}
+
+.empty {
+  padding: 34px 16px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 0.88rem;
+}
+
+/* ---------------------------------------------------------------- chips */
+
+.chip {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 2px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  border: 1px solid transparent;
+}
+
+.chip[data-tone="arrears"] {
+  color: var(--arrears);
+  background: var(--arrears-bg);
+  border-color: color-mix(in srgb, var(--arrears) 28%, transparent);
+}
+.chip[data-tone="settled"] {
+  color: var(--settled);
+  background: var(--settled-bg);
+  border-color: color-mix(in srgb, var(--settled) 28%, transparent);
+}
+.chip[data-tone="pending"] {
+  color: var(--pending);
+  background: var(--pending-bg);
+  border-color: color-mix(in srgb, var(--pending) 28%, transparent);
+}
+.chip[data-tone="quiet"] {
+  color: var(--ink-faint);
+  background: var(--paper-sunk);
+  border-color: var(--rule);
+}
+
+/* --------------------------------------------------------------- forms */
+
+button,
+.btn {
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 600;
+  padding: 7px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--rule-strong);
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+button:hover:not(:disabled) {
+  background: var(--paper-sunk);
+  border-color: var(--ink-faint);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button[data-variant="primary"] {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+
+button[data-variant="primary"]:hover:not(:disabled) {
+  background: var(--stamp);
+  border-color: var(--stamp);
+}
+
+input,
+select {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  padding: 7px 10px;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  background: var(--paper-raised);
+  color: var(--ink);
+  width: 100%;
+}
+
+input:focus,
+select:focus,
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--stamp);
+  outline-offset: 1px;
+}
+
+label {
+  display: block;
+  font-size: 0.72rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin-bottom: 5px;
+  font-weight: 600;
+}
+
+.field {
+  margin-bottom: 14px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-sunk);
+}
+
+.toolbar input,
+.toolbar select {
+  width: auto;
+  min-width: 150px;
+}
+
+/* --------------------------------------------------------------- login */
+
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.gate-card {
+  width: 100%;
+  max-width: 372px;
+  background: var(--paper-raised);
+  border: 1px solid var(--rule-strong);
+  box-shadow: var(--shadow-page);
+  padding: 30px 30px 26px;
+}
+
+.gate-card h1 {
+  font-size: 1.5rem;
+  margin-bottom: 4px;
+}
+
+.gate-card .lede {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  margin: 0 0 22px;
+}
+
+.notice {
+  padding: 9px 12px;
+  border-radius: var(--radius);
+  font-size: 0.82rem;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+
+.notice[data-tone="error"] {
+  background: var(--arrears-bg);
+  color: var(--arrears);
+  border-color: color-mix(in srgb, var(--arrears) 30%, transparent);
+}
+
+.notice[data-tone="info"] {
+  background: var(--paper-sunk);
+  color: var(--ink-soft);
+  border-color: var(--rule);
+}
+
+/* ------------------------------------------------------------- motion */
+
+/* One settle on load. Staggered by row so a long table resolves top-down like a page
+   being turned, rather than everything popping at once. */
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.settle {
+  animation: settle 0.34s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settle {
+    animation: none;
+  }
+  * {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* -------------------------------------------------------------- narrow */
+
+@media (max-width: 860px) {
+  .shell {
+    grid-template-columns: 1fr;
+  }
+  .rail {
+    position: static;
+    height: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .rail nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .main {
+    padding: 20px 16px 48px;
+  }
+}

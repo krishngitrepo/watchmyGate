@@ -67,6 +67,28 @@ const schema = z.object({
   WORKER_BASE_URL: optionalString,
   WORKER_SERVICE_ACCOUNT: optionalString,
 
+  /**
+   * Origins allowed to call this API from a browser.
+   *
+   * Comma-separated. An explicit list rather than a wildcard: reflecting any Origin
+   * would let any site a committee member visits issue authenticated calls with their
+   * session.
+   *
+   * The defaults cover local development and the Tauri desktop shell, whose origin is
+   * `tauri://localhost` on macOS/Linux and `http://tauri.localhost` on Windows.
+   */
+  CORS_ORIGINS: z
+    .string()
+    .default(
+      "http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost",
+    )
+    .transform((v) =>
+      v
+        .split(",")
+        .map((o) => o.trim())
+        .filter(Boolean),
+    ),
+
   /** Shared secret the Python AI/device service presents. */
   SERVICE_TOKEN: optionalString,
 
