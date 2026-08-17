@@ -110,20 +110,25 @@ void main() {
         .cast<Map<String, dynamic>>()
         .firstWhere((c) => c['expect'] == 'valid');
 
-    final started = DateTime.now();
-    final payload = await verifyPass(
-      good['qr'] as String,
-      keys,
-      now: DateTime.fromMillisecondsSinceEpoch(
-        good['verifyAtEpochMs'] as int,
-        isUtc: true,
-      ),
+    final at = DateTime.fromMillisecondsSinceEpoch(
+      good['verifyAtEpochMs'] as int,
+      isUtc: true,
     );
+
+    // Warm up first, then measure. The initial call pays for the crypto library's lazy
+    // initialisation, which in the real app happens once at startup rather than at the
+    // barrier. Timing the cold call measured that setup, not verification, and made this
+    // test flaky depending on what else the suite had already run.
+    await verifyPass(good['qr'] as String, keys, now: at);
+
+    final started = DateTime.now();
+    final payload = await verifyPass(good['qr'] as String, keys, now: at);
     final elapsed = DateTime.now().difference(started);
 
     expect(payload.passId, isNotEmpty);
-    // The SLO is 500ms at the barrier. Ed25519 verification is sub-millisecond; this
-    // guards against someone later adding a lookup to this path.
+    // The SLO is 500ms at the barrier. Steady-state Ed25519 verification is well under a
+    // millisecond; this bound exists to catch someone later adding a lookup to this path,
+    // not to benchmark the CPU.
     expect(elapsed.inMilliseconds, lessThan(500));
   });
 

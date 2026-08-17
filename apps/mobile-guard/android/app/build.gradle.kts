@@ -19,7 +19,13 @@ android {
         applicationId = "com.watchmygate.watchmygate_guard"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // Guards run old, cheap, society-owned hardware — often five-year-old budget
+        // Androids. Flutter's default floor moves upward with each release, and taking
+        // it blindly would drop exactly the devices this app exists to run on. 23 is the
+        // real floor here: flutter_secure_storage's Keystore path requires it, and
+        // going lower would mean storing the database key somewhere weaker, which is
+        // not a trade worth making for a device that leaves the premises.
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
