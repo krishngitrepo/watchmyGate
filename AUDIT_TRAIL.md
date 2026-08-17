@@ -277,3 +277,113 @@ production while any value still contains the literal string PLACEHOLDER.
 **CODE:** `.env.example`, `packages/db/src/migrate.ts`
 **MODEL:** L5
 **NEXT:** Await real credentials; continue building until then.
+
+---
+
+## [2026-08-15 11:00] — Landing page from the supplied design; invented proof removed
+
+**WHAT:** Built the public landing page at `/` from `design/landing/source.dc.html`, moved sign-in to
+`/login/`, and created `BACKLOG.md`.
+**WHY:** The console had no public face — `/` was the sign-in form.
+**HOW:** The supplied file is a design-tool export using proprietary `<x-dc>` / `<sc-for>` templating
+that only that tool renders, so it is kept as the reference and reimplemented as a static React page
+shipping 0 kB of page JavaScript.
+**DESIGN:** Two departures, both documented in `design/landing/README.md`. Fonts are self-hosted via
+`next/font/google` rather than CDN-linked, because Tauri's CSP blocks external hosts and the desktop
+build would silently drop to a system sans. And the fabricated social proof was removed — "5,200+
+communities", three usage statistics, six named customer logos and a signed testimonial from the
+secretary of a society that does not exist. Nothing is live, so none of it is true, and the CCPA's
+2022 misleading-advertising guidelines prohibit fabricated testimonials outright. Each slot now
+carries a claim checkable in this repo. Pricing follows the plan's ₹8–15/flat rather than the
+design's ₹29–49, which sits 2–4× above every incumbent.
+**CODE:** `apps/web-admin/src/app/page.tsx`, `landing.css`, `design/landing/README.md`
+**MODEL:** L5
+**NEXT:** Hero carousel; Phase 2 modules.
+
+---
+
+## [2026-08-15 11:30] — Hero carousel, and the ceiling on image quality
+
+**WHAT:** Replaced the hero artwork with a four-slide carousel on a glass frame.
+**WHY:** Krishna supplied four images and asked for maximum quality.
+**HOW:** The supplied screenshots were downscaled copies. The originals were traced through the
+Stitch exports and fetched from source — **512×279 is Stitch's native output and the hard ceiling on
+real detail**. `design/landing/prep_hero.py` crops the burned-in CCTV overlay text (the thinnest,
+most aliased part of each frame, and the first thing to disintegrate when enlarged), resamples 2×
+with Lanczos, applies a restrained unsharp mask, and emits 1× and 2× WebP served through `srcset`.
+**DESIGN:** The camera chrome is redrawn as live CSS text so it stays sharp at any density, and the
+fourth slide is markup rather than a bitmap because it is UI — rasterising it would discard
+resolution for nothing. A competitor's brand name appeared twice in the concierge photo and is
+blurred with a feathered mask so it reads as depth of field.
+**CODE:** `apps/web-admin/src/components/HeroCarousel.tsx`, `design/landing/prep_hero.py`
+**MODEL:** L5
+**NEXT:** Real photographs of the pilot society would beat all of this and are not capped at 512 px.
+
+---
+
+## [2026-08-15 11:45] — A `next build` that broke the running dev server, and the fix that was worse
+
+**WHAT:** Ran the production build while `next dev` was live; the open browser tab died with
+`__webpack_modules__[moduleId] is not a function`.
+**WHY:** Both commands write to `.next`, so the build replaced chunks the dev server had already
+served.
+**HOW:** Attempted a fix by giving the build its own `distDir`. **It does not work, and was
+withdrawn.** With `output: "export"` that setting relocates the *exported* files, so `out/` stopped
+being produced — the directory Tauri packages — while `.next` was overwritten exactly as before.
+Measured rather than assumed; an intermediate diagnosis blaming `NODE_ENV` instability was also
+wrong, disproved by instrumenting the config.
+**DESIGN:** Recorded the constraint as a comment in `next.config.mjs` instead of engineering around
+it. A workaround that half-works and silently breaks the desktop build is worse than a documented
+constraint.
+**CODE:** `apps/web-admin/next.config.mjs`
+**MODEL:** L5
+**NEXT:** Do not run `admin:build` while `admin:dev` is up; the repo-root `npm run build` counts.
+
+---
+
+## [2026-08-15 12:30] — Phase 2 schema: staff, deliveries, notices, vehicles, parking
+
+**WHAT:** Migrations 0007 (eleven tables) and 0008 (policies), plus Drizzle definitions.
+**WHY:** Six of the twelve modules advertised on the landing page had no storage at all.
+**HOW:** Same split as Phase 1 — tables, then controls — because a policy on a table that does not
+exist yet is the failure that split was created to fix. Every new table joined the isolation suite in
+the same commit.
+**DESIGN:** Three tables encode a decision rather than a shape. `staff` has no column that could hold
+an Aadhaar number, because §57 was struck down and verification stores only an outcome plus a masked
+last-4 — structural beats a policy document. `staff_attendance` cannot be deleted, since it is the
+evidence behind someone's pay; corrections are overrides recording who and why, enforced by trigger
+and revoked grant like the ledger. `dlt_templates` holds the registered TRAI category per template,
+because that category decides whether a message may reach a DND number, and as a constant in the
+sending code it could not. `staff_assignments` exists because a maid working six flats is the normal
+case, and a single `employer_unit_id` would make payroll wrong from day one.
+**CODE:** `packages/db/migrations/0007_phase2_tables.sql`, `0008_phase2_policies.sql`
+**MODEL:** L5
+**NEXT:** API modules on top.
+
+---
+
+## [2026-08-15 13:15] — Four modules, and a 500 that had been hiding every bad request
+
+**WHAT:** Staff/attendance, deliveries, notices/polls and vehicles/parking modules. Also fixed the
+exception filter.
+**WHY:** Completing the advertised module list, server-first — both Flutter apps consume these APIs.
+**HOW:** Verified by calling the endpoints, not by compiling them: `scripts/phase2-smoke.mjs`, 35
+checks against live Neon.
+**DESIGN:** Deliveries validate transitions against an explicit table and demand the recipient's name
+for terminal handovers, because without it "delivered" is only an assertion. Notices bind channel to
+DLT category and *refuse* a promotional SMS rather than silently dropping it — a committee that
+believes residents were told is worse off than one told we cannot send. Parking turns on
+`normalisePlate`, deliberately not validated against Indian plate formats since BH-series, military
+and dealer plates all differ and rejecting a legitimate plate leaves someone unregistrable.
+**CODE:** `apps/api/src/modules/{staff,deliveries,notices,parking}/`, `common/exception.filter.ts`
+**MODEL:** L5
+**NEXT:** Guard app.
+
+> **The find worth the most was unrelated to any of those modules.** A `ZodError` had no branch in
+> the exception filter, so it fell through to the 500 handler — and every controller in this codebase
+> validates with `schema.parse(body)`. Any malformed field on any endpoint, including ones written
+> months earlier, answered "Something went wrong. Please try again." with a stack trace in the logs.
+> It blamed the server for a client error, told the caller nothing about which field to fix, and
+> buried genuine faults in noise. Now 422 with the offending field paths — and deliberately not Zod's
+> raw issues, which echo the received value and would put a submitted PIN or OTP into the response
+> body. It typechecked and unit-tested clean; only calling the endpoints found it.
