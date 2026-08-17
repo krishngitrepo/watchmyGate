@@ -189,5 +189,5 @@ class Outbox {
         lastError: r['last_error'] as String?,
       );
 
-  void dispose() => _db.dispose();
+  void dispose() => _db.close();
 }
