@@ -11,6 +11,9 @@ const PAGES = [
   { href: "/complaints/", label: "Complaints" },
   { href: "/billing/", label: "Dues & Billing" },
   { href: "/gate/", label: "Gate Log" },
+  { href: "/operations/", label: "Gate Operations" },
+  { href: "/staff/", label: "Staff" },
+  { href: "/notices/", label: "Notices" },
   { href: "/units/", label: "Flats & Residents" },
 ];
 
