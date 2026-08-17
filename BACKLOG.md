@@ -6,7 +6,8 @@ broke. Code that exists but has never been exercised against the real dependency
 **Unproven**, not Done — that distinction is the whole point of this file.
 
 Counts as of the last update: **369 unit tests** (db 223, money 55, api 78, worker 13),
-**45 end-to-end checks** and **35 Phase 2 smoke checks**, green against live Neon.
+**57 Dart tests** in the guard app, **45 end-to-end checks** and **35 Phase 2 smoke
+checks**, green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
 **Todo** · **Blocked** (needs a credential from Krishna)
@@ -20,7 +21,7 @@ available once the line above it is finished.
 
 | # | Item | Why it is next | Backlog ref |
 |---|---|---|---|
-| 1 | **Guard app** (Flutter) | Highest risk left, and the one thing no competitor does cleanly. Everything it depends on server-side is built and tested. | [G-1 … G-9](#1-guard-app-appsmobile-guard) |
+| 1 | ~~Guard app core~~ → **remaining guard work** | Offline verification, outbox, sync and the acceptance test are **done**. Left: camera photo capture, patrols, incidents, device binding. | [G-7, G-10 … G-14](#1-guard-app-appsmobile-guard) |
 | 2 | **Razorpay test-mode proof** | The money path is written but has never taken a real signed webhook. Cheapest possible discovery of a very expensive bug. | [P-1 … P-5](#5-payments-proving-the-money-path) |
 | 3 | **Resident app** (Flutter) | Far more feature surface, far less risk. Without it, residents cannot approve anyone. | [R-1 … R-10](#2-resident-app-appsmobile-resident) |
 | 4 | **Migration tooling** | Decides whether a 400-flat society can actually switch. Commercially the highest-leverage item in this file. | [M-1 … M-6](#8-migration-tooling-the-moat) |
@@ -38,19 +39,19 @@ retain resident PII past a shift.
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| G-1 | Flutter project, Android-first, `--flavor guard` | Todo | Min SDK 21 — guards run old hardware |
-| G-2 | Drift/SQLite store under SQLCipher, key in Android Keystore | Todo | Encrypted at rest; the device leaves the society sometimes |
-| G-3 | Append-only outbox with client-generated UUIDv7 keys | Todo | Server dedups on this; `gate_events.id` already has no default for exactly this reason |
-| G-4 | Ordered sync drain with exponential backoff | Todo | Must never wedge on one bad row — mirrors `gate.service.ts` `sync()` |
-| G-5 | **Ed25519 pass verifier in Dart** | Todo | Must match `apps/api/src/modules/gate/passes.ts` byte for byte |
-| G-6 | Cached society public key, weekly rotation, offline grace | Todo | Verification cannot require network — that is the whole feature |
-| G-7 | Entry capture: photo, purpose, category, vehicle | Todo | Photo compressed on device, uploaded to R2 on sync |
-| G-8 | Shift handover + PII purge on shift end | Todo | Resident details must not survive the guard who saw them |
-| G-9 | **Airplane-mode test**: scan → admit < 500 ms; reconnect → exactly one row after 3 replays | Todo | Plan §11 test 2. This is the acceptance test for the whole app |
-| G-10 | Dart golden-vector runner for money formatting | Todo | Proves Dart and TypeScript agree — `packages/billing/golden-vectors.json` |
-| G-11 | Guard tools: patrol check-ins, incident log, shift log | Todo | Feature 5 on the landing page |
+| G-1 | Flutter project, Android-first | **Done** | Debug APK builds; minSdk 23 (Keystore floor) |
+| G-2 | SQLite under SQLCipher, key in Android Keystore | **Done** | `resetOnError: false` so a lost key fails loudly |
+| G-3 | Append-only outbox with client-generated UUIDv7 keys | **Done** | Trigger blocks DELETE; tested |
+| G-4 | Ordered sync drain with exponential backoff | **Done** | Rejected rows park; auth failure parks nothing |
+| G-5 | **Ed25519 pass verifier in Dart** | **Done** | Verified against TypeScript-signed vectors |
+| G-6 | Cached society public keys, several versions | **Done** | Survive the shift purge deliberately |
+| G-7 | Entry capture: photo, purpose, category, vehicle | **Partial** | Category and pass captured; no camera photo yet |
+| G-8 | Shift handover + PII purge on shift end | **Done** | Purges cache, keeps outbox and signing keys |
+| G-9 | **Airplane-mode acceptance test** | **Done** | Passes against live Neon; 3 replays → 3 rows |
+| G-10 | Dart golden-vector runner for money formatting | Todo | Pass vectors done; money vectors still to wire up |
+| G-11 | Guard tools: patrol check-ins, incident log | Todo | Shift log done; patrols and incidents not |
 | G-12 | SOS receive + acknowledge | Todo | Pairs with R-8 |
-| G-13 | 8 regional languages | Todo | Guards are the users least likely to read English |
+| G-13 | 8 regional languages | **Done** | Coverage + no-untranslated-copy tests |
 | G-14 | Device binding to a society | Todo | A stolen handset must not work at another gate |
 
 ## 2. Resident app (`apps/mobile-resident`)
@@ -78,11 +79,11 @@ The landing page advertises twelve. Each is tagged there with an honest **Availa
 
 | # | Module | Server | Console | Mobile | Status |
 |---|---|---|---|---|---|
-| 1 | Visitor management | Done | Done | — | **Partial** — no handset |
+| 1 | Visitor management | Done | Done | Partial | Guard app scans and admits offline |
 | 2 | Gate & entry approval | Done | Done | — | **Partial** — ladder proven server-side, no app to tap |
 | 3 | Employee & staff mgmt | **Done** | Todo | Todo | Server + tests done; no console page, no handset |
 | 4 | Delivery & courier tracking | **Done** | Todo | Todo | State machine tested; no console page, no handset |
-| 5 | Security guard tools | Partial | — | Todo | Server seams exist; app does not |
+| 5 | Security guard tools | Partial | — | **Partial** | App builds and verifies offline; patrols/incidents pending |
 | 6 | Emergency SOS & alerts | Todo | Todo | Todo | → [E-1…E-4](#7-remaining-modules) |
 | 7 | Amenity booking | Todo | Todo | Todo | → [F-1…F-3](#7-remaining-modules) |
 | 8 | Community notices | **Done** | Todo | Todo | Notices, polls, read receipts, DLT category rule |
