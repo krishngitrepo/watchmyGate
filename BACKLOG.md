@@ -7,7 +7,8 @@ broke. Code that exists but has never been exercised against the real dependency
 
 Counts as of the last update: **377 TypeScript tests** (db 223, money 55, api 86,
 worker 13), **77 Dart tests** (guard 57, resident 20), **30 Python tests**, **45
-end-to-end checks** and **35 Phase 2 smoke checks** — all green against live Neon.
+end-to-end checks**, **35 Phase 2 smoke checks** and **93 console smoke checks** — all
+green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
 **Todo** · **Blocked** (needs a credential from Krishna)
@@ -21,11 +22,14 @@ available once the line above it is finished.
 
 | # | Item | Why it is next | Backlog ref |
 |---|---|---|---|
-| 5 | **Remaining guard/resident features** | Camera capture, patrols, incidents, device binding; complaints and amenities in the resident app. | [G-7, G-11](#1-guard-app-appsmobile-guard) |
-| 1 | **Razorpay test-mode proof** | Now the top item. The money path is written but has never taken a real signed webhook — the cheapest possible discovery of the most expensive class of bug here. **Blocked on your keys.** | [P-1 … P-5](#5-payments-proving-the-money-path) |
-| 2 | **Run both apps on a real handset** | Both build and every piece of logic is tested, but neither has run on physical hardware. The camera and Keystore paths are unverified. | — |
-| 3 | **Tally + competitor CSV import** | Flats and opening balances are done. Tally and competitor formats are what remain. | [M-3, M-4](#8-migration-tooling-the-moat) |
-| 4 | **Terraform + deploy** | Nothing is deployed anywhere. CI runs; there is no environment for it to ship to. | [X-2](#10-platform-and-release) |
+| 1 | **Financial reports — trial balance, P&L, balance sheet** | The single highest value per hour left. Every committee's auditor asks for these, the double-entry ledger already holds the data, and only the endpoints and pages are missing. It is also the largest gap against MyGate Elite. | [MG-1](#7c-competitive-gaps-against-mygate) |
+| 2 | **Razorpay test-mode proof** | The money path is written but has never taken a real signed webhook — the cheapest possible discovery of the most expensive class of bug here. **Blocked on your keys.** | [P-1 … P-5](#5-payments-proving-the-money-path) |
+| 3 | **Run both apps on a real handset** | Both build and every piece of logic is tested, but neither has run on physical hardware. The camera and Keystore paths are unverified. | — |
+| 4 | **Tally export**, then Tally + competitor import | Import brings a society in; export is what lets their accountant keep working. Refusing to build it is a lock-in tactic that loses deals. | [MG-2](#7c-competitive-gaps-against-mygate), [M-3, M-4](#8-migration-tooling-the-moat) |
+| 5 | **Document repository** | Bye-laws, AGM minutes, audited accounts. Trivial on the attachment machinery that already exists, and it closes a Basic-plan gap. | [MG-30](#7c-competitive-gaps-against-mygate) |
+| 6 | **Guard patrolling + kids checkout** | The two gate features a security agency and a parent respectively ask about first. | [MG-20, MG-21](#7c-competitive-gaps-against-mygate) |
+| 7 | **Remaining guard/resident app features** | Camera capture, incidents, device binding; complaints and amenities in the resident app. | [G-7, G-11](#1-guard-app-appsmobile-guard) |
+| 8 | **Terraform + deploy** | Nothing is deployed anywhere. CI runs; there is no environment for it to ship to. | [X-2](#10-platform-and-release) |
 
 ---
 
@@ -85,12 +89,12 @@ The landing page advertises twelve. Each is tagged there with an honest **Availa
 | 4 | Delivery & courier tracking | **Done** | **Done** | Todo | On the Gate Operations page |
 | 5 | Security guard tools | Partial | — | **Partial** | Offline verify + sync proven; patrols/incidents pending |
 | 6 | Emergency SOS & alerts | **Done** | **Done** | **Done** | Raise from the resident app, handle on the console |
-| 7 | Amenity booking | **Done** | Todo | Todo | Double-booking refused by the database, verified |
+| 7 | Amenity booking | **Done** | **Done** | Todo | Double-booking refused by the database, verified from the console |
 | 8 | Community notices | **Done** | **Done** | Todo | Console shows which notices may be texted, and why |
 | 9 | Maintenance & billing | Done | Done | **Partial** | Dues visible in the app; payments still **Unproven** |
 | 10 | Vehicle & parking mgmt | **Done** | **Done** | Todo | On the Gate Operations page |
 | 11 | Attendance & payroll | **Done** | **Done** | Todo | Timesheet shows which days a human edited |
-| 12 | Analytics & reports | **Done** | Partial | — | Footfall, arrears ageing, defaulters, SLA, staff |
+| 12 | Analytics & reports | **Done** | **Done** | — | Reports page: footfall, arrears ageing, defaulters, SLA, staff |
 
 ## 4. Staff, attendance and payroll
 
@@ -143,13 +147,13 @@ Skeleton only: `config.py`, `api_client.py`, `errors.py`, `secrets.py`, `main.py
 | D-2 | Proof of handover (photo/signature) | **Done** — recipient name required |
 | D-3 | Collect-on-behalf when the resident is out | **Done** — `held_at_gate` → `collected` |
 | D-4 | Courier partner presets (Swiggy, Zomato, Blue Dart, Amazon) | Todo |
-| E-1 | SOS trigger + location broadcast | Todo |
-| E-2 | Guard/MC fan-out with acknowledgement tracking | Todo |
+| E-1 | SOS trigger + location broadcast | **Done** — insert-only, no role check on raising |
+| E-2 | Guard/MC fan-out with acknowledgement tracking | **Done** — first responder wins; console shows an alarm band |
 | E-3 | Emergency contact directory, **available offline** | Todo |
-| E-4 | Full SOS audit trail | Todo |
-| F-1 | `amenity_bookings` + conflict prevention (DB-level exclusion constraint) | Todo |
-| F-2 | Booking rules: slots, caps, charges, cancellation | Todo |
-| F-3 | Amenity booking console + resident UI | Todo |
+| E-4 | Full SOS audit trail | **Done** — raise, acknowledge and close all recorded with who |
+| F-1 | `amenity_bookings` + conflict prevention (DB-level exclusion constraint) | **Done** — overlap refused by Postgres, proven by a colliding request |
+| F-2 | Booking rules: slots, caps, charges, cancellation | **Done** — cancel sets a status, never deletes the row |
+| F-3 | Amenity booking console + resident UI | **Partial** — console done; resident app still read-only here |
 | C-1 | Notices with targeting (tower/wing/tenant/owner) | **Done** — audience resolved server-side |
 | C-2 | Multi-channel fan-out — push, SMS, email, WhatsApp | **Partial** — channels decided; senders still stubbed |
 | C-3 | **DLT template registry with category enforcement** | **Done** — table + `channelsFor` refuses promotional SMS |
@@ -169,6 +173,125 @@ Skeleton only: `config.py`, `api_client.py`, `errors.py`, `secrets.py`, `main.py
 > **C-3 is not a checkbox.** TRAI's TCCCPA ties the DND rules to the *category a template
 > was registered under*, so category has to be a property of each template in the
 > database, not a flag someone sets at send time.
+
+## 7b. Admin console (`apps/web-admin`)
+
+Until now this section did not exist, and the omission hid something: the console was a
+**read-only viewer over a complete API**. Fourteen screens, 107 endpoints behind them, and
+the only write in the entire application was the login form. A committee could watch their
+society through it but could not operate it — every action still needed an HTTP client.
+
+That is closed. Every page now writes, and each write is exercised by
+`npm run e2e:console` sending the exact request bodies the pages send.
+
+| ID | Task | Status | Notes |
+|---|---|---|---|
+| W-1 | Console wears the landing page's theme | **Done** | Warm paper, maroon and gold, Bricolage/Manrope. Money keeps tabular figures; red stays reserved for arrears |
+| W-2 | Roles carried in the session | **Done** | Actions that would 403 are not offered. Not a boundary — the API rechecks everything |
+| W-3 | Complaints: raise, thread, comment, internal note, status, reopen | **Done** | Resolve is blocked until a proof-of-fix photo exists |
+| W-4 | Billing: preview → issue, with meter readings | **Done** | Preview is mandatory; changing any input voids it |
+| W-5 | Payments: destinations, manual receipts | **Done** | Re-entering the same cheque records one receipt |
+| W-6 | Gate: issue passes, decide pending approvals, ladder history | **Done** | Pending list polls at 10s, inside the ladder's 20s first rung |
+| W-7 | Operations: SOS acknowledge/close, parcel log and handover | **Done** | Alarm band is the only loud thing in the console |
+| W-8 | Parking: vehicles, slots, allotment, violations | **Done** | Plate search normalises like the gate lookup does |
+| W-9 | Staff: add, status, PIN, verification, check in/out, timesheet | **Done** | PIN always offered as the non-biometric route |
+| W-10 | Notices: compose, publish, polls, read receipts | **Done** | Draft and publish are separate steps |
+| W-11 | Flats: towers, single and bulk add, move in, move out | **Done** | `101-108` expands; move-out end-dates rather than deletes |
+| W-12 | Directory: grant and revoke roles | **Done** | Warns when more than three people hold society admin |
+| W-13 | Amenities: create, book, cancel | **Done** | Overlap refused by the database, shown as such |
+| W-14 | Reports: footfall, ageing arrears, defaulters, SLA, staff | **Done** | Arrears bucketed by age; money-denied degrades to the rest of the page |
+| W-15 | Import: paste a sheet, preview, commit | **Done** | Column names auto-matched; preview writes nothing |
+| W-16 | `GET /v1/billing/charge-types` | **Done** | Added — the console could not otherwise know a head needs a meter reading |
+| W-17 | `BillingError` mapped to 422 | **Done** | Was a 500 saying "Something went wrong" for every billing refusal |
+| W-18 | Attachment upload from the console | Todo | Presign + PUT exists for the phone; the console can only view |
+| W-19 | Ledger reporting — trial balance, P&L, chart of accounts | Todo | No endpoints yet either, only the internal invariant checker |
+| W-20 | Document repository | Todo | No API, no page |
+| W-21 | Super-admin portfolio console | Todo | Phase 4 |
+
+## 7c. Competitive gaps against MyGate
+
+Everything in this section comes from the February 2026 MyGate sales deck (120 pp), the
+SaaS brochure and notes from a real sales conversation — all analysed in
+[`design/COMPETITOR_MYGATE.md`](design/COMPETITOR_MYGATE.md) and packaged into two plans in
+[`design/PLANS.md`](design/PLANS.md).
+
+Ordered by what would lose us a deal, not by size. `Plan` says which of Basic/Pro the
+feature is sold in.
+
+### The money gaps — all Pro
+
+The ledger already holds this data. These are almost entirely missing *endpoints and
+pages*, not missing foundations, which is why they rank first.
+
+| ID | Task | Plan | Status | Notes |
+|---|---|---|---|---|
+| MG-1 | Trial balance, P&L, balance sheet | Pro | Todo | Derivable from `journal_lines` today. Highest value per hour in the whole backlog |
+| MG-2 | **Tally-compatible export** | Pro | Todo | Import brings a society in; export is what lets their accountant keep working. Withholding it is a lock-in tactic that also loses deals |
+| MG-3 | House statement across financial years | Pro | Todo | MyGate ships multi-FY consolidated download |
+| MG-4 | Cash and fund flow report | Pro | Todo | |
+| MG-5 | Invoice and receipt PDFs | Pro | Todo | A resident who cannot download a receipt does not believe they paid |
+| MG-6 | Budget vs actual by head | Pro | Todo | Asked for loudly, once a year, at the AGM |
+| MG-7 | Asset and inventory register | Pro | Todo | Category, location, condition, audit export. On every RFP |
+| MG-8 | PR/PO with multi-level approval chain | Pro | Todo | Where MyGate's ERP differentiation actually lives |
+| MG-9 | Vendor bills and payment history | Pro | Todo | |
+| MG-10 | Security deposits — collect, hold, reverse | Pro | Todo | MyGate ties this to amenity bookings |
+| MG-11 | Advance and credit balances per flat | Pro | Todo | We track dues; a flat in credit is not modelled |
+| MG-12 | Penalty report + invoice-footer penalty summary | Pro | Todo | Cheap, and it prevents disputes |
+| MG-13 | Period lock / audit lock by financial year | Pro | Todo | In the plan, unbuilt. Their framing is right: finalised data cannot be tampered with |
+| MG-14 | GST returns, e-invoicing, TDS 194C/194J, Form 26Q | Pro | Todo | |
+| MG-15 | Slab-based penalty configuration | Pro | Partial | We have one percentage per month, not slabs |
+| MG-16 | Bulk payout report — one bank entry per day | Pro | Todo | Depends on Razorpay settlement reporting |
+| MG-17 | Side-by-side invoice preview across flats before publishing | Pro | Partial | We preview one flat; theirs compares a whole run |
+| MG-18 | Utility / prepaid-meter vendor integration | Pro | Todo | They integrate 14 vendors |
+| MG-19 | Wire OCR statement candidates into reconciliation | Pro | Todo | The AI service returns candidates; nothing consumes them |
+
+### The gate gaps — Basic
+
+| ID | Task | Plan | Status | Notes |
+|---|---|---|---|---|
+| MG-20 | **Guard patrolling** with geofenced check-ins | Basic | Todo | The first thing a security agency asks about |
+| MG-21 | **Kids checkout** — child leaves, guardian approves | Basic | Todo | Small, emotionally central to parents, clean in a demo |
+| MG-22 | Digital register replacing the gate book, Excel export | Basic | Todo | Named specifically for trucks in the sales notes |
+| MG-23 | **Animated QR / screenshot protection** | Basic | Todo | Closes a real hole in our own pass design — a forwarded screenshot currently works |
+| MG-24 | Frequent-visitor list and one-click re-invite | Basic | Partial | Passes exist; "invite my regulars again" does not |
+| MG-25 | Visitor photo in the approval notification | Basic | Partial | Capture is designed; not wired to push |
+| MG-26 | Offline emergency contact directory | Basic | Todo | Must work with no network, like the passes |
+| MG-27 | e-Intercom — resident↔resident, resident↔guard, guard↔resident | Basic | Todo | The daily interaction. Needs a voice provider |
+| MG-28 | Guest parking allotment | Basic | Partial | Slot kind exists; no guest flow |
+| MG-29 | Entry/exit retention policy — purge after 6 months | Basic | Todo | Matches MyGate, and it is a DPDP obligation, so it counts twice |
+
+### The community gaps — Basic
+
+| ID | Task | Plan | Status | Notes |
+|---|---|---|---|---|
+| MG-30 | **Document repository** — bye-laws, minutes, audited accounts | Basic | Todo | Trivial on the attachment machinery that already exists |
+| MG-31 | Move-in / move-out workflow with approvals and document collection | Basic | Partial | Occupancy in/out done; the workflow, dues clearance and NOC are not |
+| MG-32 | Rental agreement storage with expiry status | Basic | Todo | |
+| MG-33 | Surveys — several questions, not one | Basic | Partial | Polls hold a single question |
+| MG-34 | Elections — candidates, turnout report, result/turnout split | Basic | Partial | Voting works; the election apparatus does not |
+| MG-35 | AGM scheduling, agenda, minutes, quorum | Basic | Todo | |
+| MG-36 | Neighbour directory with privacy controls | Basic | Todo | Distinct from the roles directory that exists |
+| MG-37 | Helpdesk auto-assignment by category and skill | Basic | Partial | We route by category only |
+| MG-38 | Round-robin assignment by who is actually on site | Basic | Todo | Clever: uses gate attendance to pick an assignee |
+| MG-39 | OTP-based complaint resolution by the technician | Basic | Todo | Resident's OTP closes the ticket. Do this *and* keep proof-of-fix |
+| MG-40 | Comment templates for helpdesk staff | Basic | Todo | |
+| MG-41 | Staff-facing app for technicians | Basic | Todo | MyGate's "Saarthi". A fourth binary — weigh carefully |
+| MG-42 | MIS/TAT reports by assignee, with export | Basic | Partial | Reports page has ageing and breaches, not by assignee |
+| MG-43 | Amenity depth — access control, grouping, cooldown, cancellation charges, recurring bookings, utilisation report | Basic | Todo | Their soft-block is an app-level fix for the race our constraint already prevents |
+| MG-44 | Custom roles | Basic | Todo | We ship seven fixed; they allow ten custom |
+| MG-45 | Audit log viewer in the console | Basic | Partial | The log is immutable and complete; nothing displays it |
+| MG-46 | Rent-a-parking between residents | Basic | Todo | We store a monthly rate; there is no rental flow |
+| MG-47 | Community feed, classes, pet directory, buy & sell, local services | Basic | Todo | Phase 4. Pet vaccination status is a good hook |
+
+### Deliberately refused
+
+Not omissions. Each is a decision, recorded so a later pass does not "fix" it.
+
+| ID | MyGate feature | Decision |
+|---|---|---|
+| MG-48 | Blocking visitor approvals, gate passes, move-in/out and **complaint logging** until arrears are cleared | **Refuse the parts that touch safety, home access or fault reporting.** Withholding discretionary benefits — the party hall, a guest slot — is fine. Using the gate as a debt-collection lever against a household is not |
+| MG-49 | Advertising engine, lift posters, standees, gate signage, door tags, sampling kiosks | **Refuse.** The landing page commits to no ads and no data sale. Their brochure sells all of this two pages after "Your data doesn't interest us" |
+| MG-50 | Platform fee charged to the resident per payment (₹5.9 / ₹11 in their notes) | **Refuse.** ~₹22,500 a year taken from residents of a 171-unit society, on top of the licence, and it appears on no slide |
 
 ## 8. Migration tooling (the moat)
 

@@ -436,3 +436,164 @@ hardware.
 > A fifth was self-inflicted: the CI secret scanner's first version failed on
 > `.env.example`, a file that exists precisely to show the shape of a connection string.
 > A scanner that flags its own documentation gets switched off within a week.
+
+---
+
+## [2026-08-17 20:30] — The console learns to write
+
+**WHAT:** Rebuilt `apps/web-admin` on the landing page's visual language and gave every
+page its write paths. Fourteen screens: Today, Reports, Dues & Billing, Payments,
+Complaints, Notices & Polls, Amenities, Gate Log, Operations, Parking, Flats & Residents,
+Directory & Roles, Staff, Import Data. Five of those did not exist before.
+
+**WHY:** Asked whether the internal pages were built, the honest answer was no — and the
+finding was worse than a missing page. The console was a **read-only viewer over a
+complete API**: eight screens, 107 endpoints behind them, and the only write in the whole
+application was the login form. A committee could watch their society through it but
+could not operate it. Every action — issue an invoice, acknowledge an alarm, move a
+tenant in, publish a notice — still required an HTTP client.
+
+**HOW:** Retheme first, then one page at a time, then verification by calling. The theme
+moved from the ruled-register aesthetic to the landing page's warm paper, maroon and gold
+with Bricolage Grotesque over Manrope, keeping only the parts of the old design that were
+load-bearing rather than decorative: money in tabular figures, right-aligned; one colour
+reserved for arrears; a single settle animation and nothing else moving.
+
+**DESIGN:** Decisions worth recording, each of which was a judgement rather than a
+default.
+
+- **Roles ride in the session.** `session.roles()` and `can()` decide whether an action is
+  offered at all, so a treasurer is not shown an Import button that always 403s. This is
+  explicitly *not* a security boundary — the API rechecks every role on every request, and
+  a token edited in devtools buys nothing but a different error message.
+- **Preview is a mandatory step before issuing an invoice, and any edit voids it.**
+  Approving figures computed for a different period is the one mistake that screen must
+  make impossible.
+- **Resolving a complaint requires a proof-of-fix photo to already be attached.** A
+  "resolved" with no evidence is how a lift stays broken for three weeks while the ticket
+  says otherwise.
+- **Drafting and publishing a notice are separate actions.** Once sent it has reached four
+  hundred phones and cannot be recalled.
+- **Move-out end-dates an occupancy; it never deletes one.** "Who was liable in June?" has
+  to keep answering after the tenant has gone.
+- **`useAction` is the only way a write happens.** It disables the control in flight so a
+  double tap cannot issue two invoices, surfaces the API's own sentence rather than
+  "something went wrong", and leaves the form populated on failure.
+- **Bars are drawn by hand, not by a charting library.** Every figure on a committee
+  report has to read as a number as well as a shape, and 60 KB of bundle to draw eight
+  rectangles is a poor trade on a society's connection.
+- **The import screen matches column names.** `Flat No`, `Block`, `Owner Name` and the
+  rest are recognised, because a society exporting from Tally or a competitor will not
+  rename columns first — that is where migrations get abandoned. Tabs are tried before
+  commas, since a rupee amount written `1,23,456.00` would otherwise split into three
+  columns and corrupt every row silently.
+
+**CODE:** `apps/web-admin/src/app/globals.css` (rethemed), `src/components/Shell.tsx`
+(`Modal`, `Field`, `Check`, `Tabs`, `Bar`, `Banner`, `Form`, `useAction`), all fourteen
+`page.tsx` files, `src/lib/api.ts` (`can`, roles in session),
+`apps/api/src/modules/billing/*` (charge-types endpoint),
+`apps/api/src/common/exception.filter.ts` (`BillingError` branch),
+`scripts/console-smoke.mjs`.
+
+**MODEL:** L5
+
+**NEXT:** Attachment upload from the console; ledger reporting endpoints (trial balance,
+P&L) which do not exist yet in any form; then Razorpay test-mode proof, still blocked on
+credentials.
+
+> **Two defects surfaced the moment a page called the API, and both had been latent for
+> weeks because nothing had ever called it.**
+>
+> **`/v1/billing/preview` answered 500 for every unit in the seeded society.** The cause
+> was a `BillingError` from the money package — *"Cannot bill 'Water charge': no meter
+> reading for this period"* — falling through to the generic handler and arriving as
+> "Something went wrong. Please try again." That message names exactly what the accountant
+> has to supply, and it was being thrown away for a sentence that blames the server. This
+> is the same class of bug as the `ZodError` → 500 found in the previous pass, in the same
+> filter; one more error type that nothing had ever exercised.
+>
+> **The console could not have known to ask for a meter reading.** There was no endpoint
+> listing charge heads, so the only route to that knowledge was submitting a preview and
+> reading the refusal — which, until the above was fixed, said nothing. Added
+> `GET /v1/billing/charge-types`, returning `needsMeterReading` and `needsManualAmount`
+> per head and deliberately omitting `accountId`, since which ledger account a charge
+> posts to is not the browser's business.
+>
+> Both were invisible to `tsc` and to 377 unit tests. They were visible on the first call.
+> `npm run e2e:console` now sends the exact request bodies the pages send — 93 checks,
+> including that the same cheque number twice records one receipt, that an overlapping
+> amenity booking is refused by Postgres rather than by a lookup, that a parcel handover
+> with nobody named is rejected, that a preview import leaves the flat count unchanged,
+> and that no PIN hash, Aadhaar field or driver envelope ever reaches a browser.
+
+---
+
+## [2026-08-17 22:10] — MyGate analysed; packaging cut to Basic and Pro
+
+**WHAT:** Read the two MyGate documents supplied (a 9-page SaaS brochure and a 120-page
+February 2026 sales deck) plus the notes from a real sales call, extracted the full
+feature inventory, compared it against what WatchMyGate actually has, and packaged the
+result into two plans. Three deliverables: `design/COMPETITOR_MYGATE.md`,
+`design/PLANS.md`, and 50 new backlog IDs (N-1 … N-50).
+
+**WHY:** Krishna supplied the three-tier module list (Standard / Prime / Elite) and asked
+for a gap analysis and for everything to be brought into Basic and Pro plans.
+
+**HOW:** Text extracted with pdfplumber rather than read as images — the deck is 120 pages
+and the feature content is all text. Every "we have this" claim was then checked against
+the schema and the modules rather than asserted from memory; several first guesses were
+wrong (`document` in the schema is an attachment *kind*, not a repository; expense
+accounts exist in the chart of accounts but nothing reports on them).
+
+**DESIGN:** Three decisions worth recording.
+
+**Two plans, not three.** MyGate splits gate / community / accounting. A society buying
+their middle tier is still running its money in Tally, which means the middle tier mostly
+exists to make the top one look reasonable. The real decision a committee makes is binary:
+*do we want this to run the gate, or to run the society?* So Basic takes their Standard
+**and** most of Prime; Pro adds the money.
+
+**Priced per flat with an annual ceiling.** The most commercially important fact in the
+folder is that MyGate prices **per society, flat** — ₹28k/₹32k/₹42k a year regardless of
+size. At the quoted 171-villa community that is ₹13.6–20.5 per unit per month; at 800
+units the same fee is ₹2.92–4.38. Large societies get a bargain, small ones subsidise it.
+Pricing purely per flat would beat them at 171 units and lose badly at 600, so: tapered
+per-flat rates with a hard annual ceiling (₹24,000 Basic, ₹36,000 Pro). That undercuts
+them at every size — verified arithmetically, not asserted. It costs 3–4 points of gross
+margin (70–74% rather than the plan's 72–78%), and that is the right trade: onboarding
+cost and support load are nearly flat with society size, so charging more for flats that
+cost no more to serve is how a price becomes a reason to leave.
+
+**Two features refused, in writing.** MyGate's deck lists blocking visitor approvals, gate
+passes, move-in/out and *complaint logging* until arrears are cleared. Withholding the
+party hall is fine; using the gate as a debt-collection lever against a household — one
+that may be behind for reasons a committee knows nothing about — is not. Recorded as N-48
+so a later pass does not "fix" the omission. Also N-49: their brochure sells an advertising
+engine, lift posters, standees, gate signage and sampling kiosks *two pages after* a page
+headed "Your data doesn't interest us". Our landing page already commits to neither, and
+that promise appreciates the longer they run both pages in one brochure.
+
+**CODE:** `design/COMPETITOR_MYGATE.md`, `design/PLANS.md`, `BACKLOG.md` §7c and a rewritten
+critical path.
+
+**MODEL:** L5
+
+**NEXT:** N-1 (trial balance, P&L, balance sheet) is now the top item on the critical path,
+ahead of everything except the credential-blocked Razorpay proof.
+
+> **What the comparison actually showed.**
+>
+> The gap is almost entirely in the **ERP**, and almost none of it is foundational. Every
+> financial report MyGate sells — trial balance, P&L, balance sheet, house statement, cash
+> flow — is derivable from `journal_lines` today. What is missing is endpoints and pages,
+> not a data model. That is the cheapest large gap in the product and it is now item 1.
+>
+> Where we are ahead is narrower but harder to copy: the gate works with no network, and
+> the controls are in Postgres rather than in application code. Their 3-minute "soft
+> block" for high-demand amenities is an application-level mitigation for exactly the race
+> our exclusion constraint makes impossible — a good illustration of the difference.
+>
+> And one number worth keeping: their notes show a ₹5.9–11 platform fee charged to the
+> **resident** on each payment. For a 171-unit society paying monthly that is roughly
+> ₹22,500 a year taken from residents on top of the licence, and it appears on no slide in
+> 120 pages.
