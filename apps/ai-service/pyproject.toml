@@ -20,6 +20,7 @@ dependencies = [
     "orjson>=3.10.0",
     "phonenumbers>=8.13.0",
     "uuid-utils>=0.10.0",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]

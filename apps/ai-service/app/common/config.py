@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     worker_base_url: str | None = None
     worker_service_account: str | None = None
 
+    # The shared secret the TypeScript API presents on every /internal/ call. This
+    # service holds residents' bank statements and voice recordings in flight, so the
+    # only caller it accepts is the API — never a browser or a phone. The matching value
+    # lives in the API's own SERVICE_TOKEN.
+    service_token: SecretStr | None = None
+
     sentry_dsn: str | None = None
 
     @computed_field  # type: ignore[prop-decorator]

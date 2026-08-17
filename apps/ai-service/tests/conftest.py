@@ -1,40 +1,37 @@
-"""Test fixtures.
+"""Test fixtures for the AI service.
 
-Database-backed tests run against the local docker-compose Postgres as
-`watchmygate_app` — the restricted NOBYPASSRLS role the application uses in production.
-Connecting as the owner would make every isolation test pass vacuously, so the role is
-itself asserted in tests/test_tenant_isolation.py.
+This file previously described a world that no longer exists: it seeded two societies
+against a docker-compose Postgres and imported `app.scripts.seed`. Both went when the
+API moved to TypeScript and local Docker was dropped — the AI service owns no tables and
+never talks to the database. It calls the TypeScript API over HTTP like any other client.
 
-`seeded_database` is deliberately **not** autouse: pure-arithmetic tests such as
-tests/test_money.py must run with no database at all.
+So there is nothing to seed and nothing to connect to. What is left is a settings fixture
+that guarantees stub mode, because a test that accidentally picks up a real
+`ANTHROPIC_API_KEY` from the environment would bill money and send a resident's bank
+statement to an API during a unit-test run.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import Iterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.scripts.seed import main as seed_main
-
-
-@pytest.fixture(scope="session")
-async def seeded_database() -> None:
-    """Seed two societies once per session.
-
-    The isolation tests need a second tenant to prove nothing leaks across, and a
-    person who belongs to both to prove scoping follows the relationship rather than
-    the person.
-    """
-    await seed_main()
+from app.common.config import Settings
 
 
 @pytest.fixture
-async def client(seeded_database: None) -> AsyncIterator[AsyncClient]:
-    from app.main import app
+def stub_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[Settings]:
+    """Settings with every external integration stubbed.
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as async_client:
-        yield async_client
+    The key is explicitly cleared rather than merely left unset. A developer with
+    `ANTHROPIC_API_KEY` exported in their shell would otherwise run the whole suite
+    against the live API without noticing until the bill arrived.
+    """
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    yield Settings(
+        environment="local",
+        database_url="postgresql://unused/unused",
+        jwt_secret="test-secret-at-least-16-chars",
+        service_token="test-token",
+    )
