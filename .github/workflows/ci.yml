@@ -1,0 +1,167 @@
+name: CI
+
+# Every push and PR. The isolation job is the one that matters — see below.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ---------------------------------------------------------------- typescript
+  typescript:
+    name: TypeScript — build, lint, test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspaces --if-present
+      - run: npm run typecheck --workspaces --if-present
+
+      # The money and pure-logic suites need no database, so they run on every PR
+      # including from forks, where secrets are unavailable.
+      - name: Unit tests (no database)
+        run: |
+          npm test -w @watchmygate/money
+          npm test -w @watchmygate/api
+          npm test -w @watchmygate/worker
+
+  # ------------------------------------------------------------------ isolation
+  #
+  # **This job is the build gate.** Plan §11 test 1: authenticate as society A and
+  # attempt to read society B across every tenant-scoped table. It must return zero rows,
+  # and it includes a negative control proving the *owner* role can cross societies — so
+  # a suite that passes because it is connected as the wrong user fails instead.
+  #
+  # It needs a real Postgres because the guarantee is a Postgres guarantee: row-level
+  # security enforced against a NOBYPASSRLS role. Mocking it would test nothing.
+  isolation:
+    name: Tenant isolation (required)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: watchmygate
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build -w @watchmygate/db
+
+      - name: Migrate
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/watchmygate
+          DATABASE_MIGRATION_URL: postgresql://postgres:postgres@localhost:5432/watchmygate
+          APP_DB_PASSWORD: ci-app-role-password
+        run: npm run db:migrate
+
+      - name: Isolation and schema parity
+        env:
+          # The app role, deliberately — not the owner. Connecting as the owner would
+          # make every isolation assertion pass vacuously.
+          DATABASE_URL: postgresql://watchmygate_app:ci-app-role-password@localhost:5432/watchmygate
+          DATABASE_MIGRATION_URL: postgresql://postgres:postgres@localhost:5432/watchmygate
+        run: npm test -w @watchmygate/db
+
+  # ---------------------------------------------------------------------- dart
+  dart:
+    name: Flutter — guard and resident
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Guard app
+        working-directory: apps/mobile-guard
+        run: |
+          flutter pub get
+          flutter analyze
+          # The airplane-mode acceptance test skips itself when no API is reachable,
+          # which is correct here — it is exercised against live Neon locally.
+          flutter test
+
+      - name: Resident app
+        working-directory: apps/mobile-resident
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+  # -------------------------------------------------------------------- python
+  python:
+    name: AI service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Test
+        working-directory: apps/ai-service
+        # No ANTHROPIC_API_KEY, so every test runs in stub mode. That is asserted by the
+        # suite rather than assumed — a key leaking in from the environment would bill
+        # money and send a fixture to a real API during a unit-test run.
+        run: uv run pytest -q
+
+  # ------------------------------------------------------------------ secrets
+  secrets:
+    name: No secrets committed
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # `design/keys.md` holds a live Neon password and is gitignored. This job exists
+      # because "it is in .gitignore" stops protecting you the moment someone runs
+      # `git add -f`, and a credential in history is not removable by a later commit.
+      - name: Refuse a committed credentials file
+        run: |
+          if git ls-files --error-unmatch design/keys.md 2>/dev/null; then
+            echo "::error::design/keys.md is tracked. It holds live credentials."
+            exit 1
+          fi
+          if git ls-files | grep -E '(^|/)\.env$'; then
+            echo "::error::A .env file is tracked."
+            exit 1
+          fi
+          echo "No credential files tracked."
+
+      - name: Refuse a real connection string in the tree
+        run: |
+          # Deliberately narrow. Matches a postgres URL carrying a password, excludes
+          # PLACEHOLDER values, and skips .env.example — which exists precisely to show
+          # the shape of a connection string.
+          #
+          # The first version of this check failed on that file, which is exactly the
+          # "cries wolf" failure the design note warns about: a scanner that flags its
+          # own documentation gets switched off within a week, and then it protects
+          # nothing at all.
+          if git grep -nE 'postgres(ql)?://[^:]+:[^@]+@' \
+               -- ':!*.md' ':!.github/*' ':!.env.example' \
+             | grep -v PLACEHOLDER; then
+            echo "::error::A connection string with a real password is committed."
+            exit 1
+          fi
+          echo "No connection strings found."
