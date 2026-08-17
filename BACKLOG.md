@@ -5,8 +5,8 @@ conservative: **Done** means it exists *and* is proven by a test that would fail
 broke. Code that exists but has never been exercised against the real dependency is
 **Unproven**, not Done — that distinction is the whole point of this file.
 
-Counts as of the last update: **294 unit tests** (db 173, money 55, api 53, worker 13) and
-**45 end-to-end checks**, green against live Neon.
+Counts as of the last update: **369 unit tests** (db 223, money 55, api 78, worker 13),
+**45 end-to-end checks** and **35 Phase 2 smoke checks**, green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
 **Todo** · **Blocked** (needs a credential from Krishna)
@@ -80,26 +80,26 @@ The landing page advertises twelve. Each is tagged there with an honest **Availa
 |---|---|---|---|---|---|
 | 1 | Visitor management | Done | Done | — | **Partial** — no handset |
 | 2 | Gate & entry approval | Done | Done | — | **Partial** — ladder proven server-side, no app to tap |
-| 3 | Employee & staff mgmt | Todo | Todo | Todo | **Todo** → [S-1…S-5](#4-staff-attendance-and-payroll) |
-| 4 | Delivery & courier tracking | Todo | Todo | Todo | **Todo** → [D-1…D-4](#7-remaining-modules) |
+| 3 | Employee & staff mgmt | **Done** | Todo | Todo | Server + tests done; no console page, no handset |
+| 4 | Delivery & courier tracking | **Done** | Todo | Todo | State machine tested; no console page, no handset |
 | 5 | Security guard tools | Partial | — | Todo | Server seams exist; app does not |
 | 6 | Emergency SOS & alerts | Todo | Todo | Todo | → [E-1…E-4](#7-remaining-modules) |
 | 7 | Amenity booking | Todo | Todo | Todo | → [F-1…F-3](#7-remaining-modules) |
-| 8 | Community notices | Todo | Todo | Todo | → [C-1…C-4](#7-remaining-modules) |
+| 8 | Community notices | **Done** | Todo | Todo | Notices, polls, read receipts, DLT category rule |
 | 9 | Maintenance & billing | Done | Done | Todo | Ledger + invoicing proven; payments **Unproven** |
-| 10 | Vehicle & parking mgmt | Todo | Todo | Todo | → [V-1…V-4](#7-remaining-modules) |
-| 11 | Attendance & payroll | Todo | Todo | Todo | → [S-1…S-5](#4-staff-attendance-and-payroll) |
+| 10 | Vehicle & parking mgmt | **Done** | Todo | Todo | Plate normalisation, slots, violations |
+| 11 | Attendance & payroll | **Done** | Todo | Todo | Timesheets; attendance is undeletable |
 | 12 | Analytics & reports | Partial | Partial | — | Society summary only → [N-1…N-5](#7-remaining-modules) |
 
 ## 4. Staff, attendance and payroll
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| S-1 | `staff`, `attendance` tables + RLS policies | Todo | Named in the data model, no DDL yet |
-| S-2 | Staff onboarding with verified profile | Todo | |
-| S-3 | Daily check-in/out at the gate | Todo | Reuses the gate event pipeline |
-| S-4 | Payroll-ready timesheets, manual override with audit | Todo | Override must be logged — it is a money-adjacent action |
-| S-5 | DigiLocker verification, **store result + masked last-4 only** | Todo | Never the Aadhaar number. Aadhaar Act §57 |
+| S-1 | `staff`, `attendance` tables + RLS policies | **Done** | Migrations 0007/0008, in the isolation suite |
+| S-2 | Staff onboarding with verified profile | **Done** | `POST /v1/staff`, multi-flat assignments |
+| S-3 | Daily check-in/out at the gate | **Done** | PIN/card/scan; server clock; idempotent per day |
+| S-4 | Payroll-ready timesheets, manual override with audit | **Done** | Overrides carry who and why; rows cannot be deleted |
+| S-5 | DigiLocker verification, **store result + masked last-4 only** | **Partial** | Storage + API done and enforced; no DigiLocker call yet |
 | S-6 | Biometric attendance — **opt-in, PIN/card alternative always offered** | Todo | Phase 4. Staff cannot meaningfully refuse an employer, so this is not a plain feature toggle |
 
 > The landing page says "reliable attendance", not "biometric-grade". That wording was
@@ -138,9 +138,9 @@ Skeleton only: `config.py`, `api_client.py`, `errors.py`, `secrets.py`, `main.py
 
 | ID | Task | Status |
 |---|---|---|
-| D-1 | `deliveries` table, gate-to-doorstep states | Todo |
-| D-2 | Proof of handover (photo/signature) | Todo |
-| D-3 | Collect-on-behalf when the resident is out | Todo |
+| D-1 | `deliveries` table, gate-to-doorstep states | **Done** |
+| D-2 | Proof of handover (photo/signature) | **Done** — recipient name required |
+| D-3 | Collect-on-behalf when the resident is out | **Done** — `held_at_gate` → `collected` |
 | D-4 | Courier partner presets (Swiggy, Zomato, Blue Dart, Amazon) | Todo |
 | E-1 | SOS trigger + location broadcast | Todo |
 | E-2 | Guard/MC fan-out with acknowledgement tracking | Todo |
@@ -149,13 +149,13 @@ Skeleton only: `config.py`, `api_client.py`, `errors.py`, `secrets.py`, `main.py
 | F-1 | `amenity_bookings` + conflict prevention (DB-level exclusion constraint) | Todo |
 | F-2 | Booking rules: slots, caps, charges, cancellation | Todo |
 | F-3 | Amenity booking console + resident UI | Todo |
-| C-1 | Notices with targeting (tower/wing/tenant/owner) | Todo |
-| C-2 | Multi-channel fan-out — push, SMS, email, WhatsApp | Todo |
-| C-3 | **DLT template registry with category enforcement** | Todo |
-| C-4 | Polls, events, RSVP, community feed | Todo |
-| V-1 | Vehicle registration per unit | Todo |
-| V-2 | Parking slot allotment | Todo |
-| V-3 | Unauthorised-parking flagging | Todo |
+| C-1 | Notices with targeting (tower/wing/tenant/owner) | **Done** — audience resolved server-side |
+| C-2 | Multi-channel fan-out — push, SMS, email, WhatsApp | **Partial** — channels decided; senders still stubbed |
+| C-3 | **DLT template registry with category enforcement** | **Done** — table + `channelsFor` refuses promotional SMS |
+| C-4 | Polls, events, RSVP, community feed | **Done** — polls, votes, read receipts, feed |
+| V-1 | Vehicle registration per unit | **Done** |
+| V-2 | Parking slot allotment | **Done** — one slot per vehicle enforced |
+| V-3 | Unauthorised-parking flagging | **Done** — works for unregistered plates |
 | V-4 | Society-issued UHF RFID barrier integration | Todo (Phase 4) |
 | N-1 | Footfall and gate analytics | Todo |
 | N-2 | Collections and arrears ageing | Todo |
