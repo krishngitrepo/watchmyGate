@@ -1,4 +1,4 @@
-import { Body, Controller, Post } from "@nestjs/common";
+import { Body, Controller, Get, Post } from "@nestjs/common";
 import { z } from "zod";
 
 import { ForbiddenError } from "../../common/errors.js";
@@ -17,6 +17,20 @@ const previewSchema = z.object({
 @Controller("v1/billing")
 export class BillingController {
   constructor(private readonly billing: BillingService) {}
+
+  /**
+   * What a bill for this society is made of.
+   *
+   * The console asks for this before showing the invoice form, so a head that needs a
+   * meter reading or a manual amount gets a box to type it into. Without it the
+   * accountant's only route to that knowledge was submitting a preview and reading the
+   * refusal — which, until `BillingError` was mapped, arrived as "Something went wrong."
+   */
+  @Get("charge-types")
+  async chargeTypes() {
+    this.requireAccounting();
+    return this.billing.listChargeTypes();
+  }
 
   /**
    * Compute an invoice without saving it.

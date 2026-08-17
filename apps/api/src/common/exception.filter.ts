@@ -7,6 +7,8 @@ import {
 import type { Request, Response } from "express";
 import { ZodError } from "zod";
 
+import { BillingError } from "@watchmygate/money";
+
 import { AppError } from "./errors.js";
 
 /**
@@ -57,6 +59,29 @@ export class AppExceptionFilter implements ExceptionFilter {
             message: i.message,
           })),
         },
+      });
+      return;
+    }
+
+    /**
+     * A billing rule refused the input, and its message is the useful part.
+     *
+     * `BillingError` comes out of the money package — "Cannot bill 'Water charge': no
+     * meter reading for this period", "per_sqft charge needs a carpet area". Every one of
+     * those names exactly what the accountant has to supply, and without this branch all
+     * of them fell through to the 500 handler and arrived as "Something went wrong.
+     * Please try again."
+     *
+     * Nobody noticed because no client had ever called `/v1/billing/preview` — the
+     * console was read-only until the billing screen was built. Typechecking and the unit
+     * tests both pass either way; only calling the endpoint finds it.
+     *
+     * 422, the same as a rejected field: this is the caller's input being refused, not a
+     * fault on our side.
+     */
+    if (exception instanceof BillingError) {
+      response.status(422).json({
+        error: { code: "billing_input_required", message: exception.message },
       });
       return;
     }

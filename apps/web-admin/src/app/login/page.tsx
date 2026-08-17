@@ -80,7 +80,7 @@ export default function SignIn() {
         return;
       }
       if (mine.length === 1) {
-        await choose(mine[0]!.societyId);
+        await choose(mine[0]!);
         return;
       }
       setMemberships(mine);
@@ -99,15 +99,20 @@ export default function SignIn() {
    * new token must carry the society, because every tenant-scoped endpoint reads the
    * society from the token rather than from the request.
    */
-  async function choose(societyId: string) {
+  async function choose(membership: Membership) {
     setBusy(true);
     try {
       const refreshToken = sessionStorage.getItem("wmg.refresh")!;
       const tokens = await api.post<{ accessToken: string; refreshToken: string }>(
         "/v1/auth/refresh",
-        { refreshToken, societyId },
+        { refreshToken, societyId: membership.societyId },
       );
-      session.save(tokens, societyId);
+      // Roles are stored alongside the token so the console can decline to offer an
+      // action that would certainly be refused. The API still checks every one of them.
+      session.save(tokens, membership.societyId, {
+        roles: membership.roles,
+        societyName: membership.societyName,
+      });
       router.replace("/dashboard/");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not open that society.");
@@ -118,7 +123,9 @@ export default function SignIn() {
   return (
     <div className="gate">
       <div className="gate-card settle">
-        <h1>The Register</h1>
+        <h1>
+          Watch<em>My</em>Gate
+        </h1>
         <p className="lede">
           {stage === "phone"
             ? "Sign in with the mobile number your society has on record."
@@ -202,7 +209,7 @@ export default function SignIn() {
             {memberships.map((m) => (
               <button
                 key={m.societyId}
-                onClick={() => void choose(m.societyId)}
+                onClick={() => void choose(m)}
                 disabled={busy}
                 style={{ width: "100%", marginBottom: 8, textAlign: "left" }}
               >

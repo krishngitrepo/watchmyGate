@@ -17,6 +17,8 @@
 const TOKEN_KEY = "wmg.access";
 const REFRESH_KEY = "wmg.refresh";
 const SOCIETY_KEY = "wmg.society";
+const ROLES_KEY = "wmg.roles";
+const SOCIETY_NAME_KEY = "wmg.societyName";
 
 export class ApiError extends Error {
   constructor(
@@ -45,21 +47,54 @@ export const session = {
   societyId: (): string | null =>
     typeof window === "undefined" ? null : sessionStorage.getItem(SOCIETY_KEY),
 
-  save(tokens: { accessToken: string; refreshToken: string }, societyId: string): void {
+  /**
+   * The roles this person holds *in this society*.
+   *
+   * Kept only so the console can avoid offering an action that would certainly be
+   * refused — an "Import" button that always returns 403 teaches people the product is
+   * broken. It is **not** a security boundary: the API re-checks every role on every
+   * request, and a token edited in devtools buys nothing but a different error message.
+   */
+  roles: (): string[] => {
+    if (typeof window === "undefined") return [];
+    try {
+      return JSON.parse(sessionStorage.getItem(ROLES_KEY) ?? "[]") as string[];
+    } catch {
+      return [];
+    }
+  },
+
+  societyName: (): string =>
+    (typeof window === "undefined" ? null : sessionStorage.getItem(SOCIETY_NAME_KEY)) ??
+    "Your society",
+
+  save(
+    tokens: { accessToken: string; refreshToken: string },
+    societyId: string,
+    meta?: { roles?: string[]; societyName?: string },
+  ): void {
     sessionStorage.setItem(TOKEN_KEY, tokens.accessToken);
     sessionStorage.setItem(REFRESH_KEY, tokens.refreshToken);
     sessionStorage.setItem(SOCIETY_KEY, societyId);
+    if (meta?.roles) sessionStorage.setItem(ROLES_KEY, JSON.stringify(meta.roles));
+    if (meta?.societyName) sessionStorage.setItem(SOCIETY_NAME_KEY, meta.societyName);
   },
 
   clear(): void {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(REFRESH_KEY);
-    sessionStorage.removeItem(SOCIETY_KEY);
+    for (const key of [TOKEN_KEY, REFRESH_KEY, SOCIETY_KEY, ROLES_KEY, SOCIETY_NAME_KEY]) {
+      sessionStorage.removeItem(key);
+    }
   },
 
   isSignedIn: (): boolean =>
     typeof window !== "undefined" && Boolean(sessionStorage.getItem(TOKEN_KEY)),
 };
+
+/** True when the signed-in person holds any of these roles in the current society. */
+export function can(...roles: string[]): boolean {
+  const held = session.roles();
+  return roles.some((role) => held.includes(role));
+}
 
 async function request<T>(
   path: string,

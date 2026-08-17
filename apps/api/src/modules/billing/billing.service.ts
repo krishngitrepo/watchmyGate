@@ -335,6 +335,35 @@ export class BillingService {
     };
   }
 
+  /**
+   * The charge heads a bill for this society is made of.
+   *
+   * Exposed because the console cannot raise an invoice without it. A `per_meter` charge
+   * needs a reading for the period and a `manual` charge needs an amount — and until this
+   * existed, the only way to discover that was to submit a preview and read the refusal.
+   * An accountant should be shown the boxes to fill, not made to guess and retry.
+   *
+   * `accountId` is deliberately not returned: which ledger account a charge posts to is
+   * not the browser's business.
+   */
+  async listChargeTypes() {
+    const { societyId } = currentContext();
+    return tx(async (db) => {
+      const rows = await this.chargeTypes(db, societyId);
+      return rows.map((row) => ({
+        code: row.code,
+        name: row.name,
+        formula: row.formula,
+        rate: row.rate,
+        gstApplicable: row.gstApplicable,
+        gstRate: row.gstRate,
+        /** True when the accountant has to supply something for this head. */
+        needsMeterReading: row.formula === "per_meter",
+        needsManualAmount: row.formula === "manual",
+      }));
+    });
+  }
+
   private async chargeTypes(db: TenantTx, societyId: string) {
     const rows = await db
       .select({

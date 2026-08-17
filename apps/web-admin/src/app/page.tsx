@@ -51,13 +51,13 @@ const FEATURES: {
     icon: "👥",
     title: "Employee & staff mgmt",
     desc: "Onboard maids, drivers and vendors with verified profiles and daily check-in.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "📦",
     title: "Delivery & courier tracking",
     desc: "Track packages from gate to doorstep and collect proof of handover.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "🛡️",
@@ -69,43 +69,47 @@ const FEATURES: {
     icon: "🚨",
     title: "Emergency SOS & alerts",
     desc: "One-tap panic alerts broadcast location to guards and management instantly.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "🏸",
     title: "Amenity booking",
     desc: "Reserve the clubhouse, courts and halls with automatic conflict handling.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "📣",
     title: "Community notices",
     desc: "Publish circulars, polls and events residents actually read.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "🧾",
     title: "Maintenance & billing",
-    desc: "Raise dues, collect payments online and reconcile in a click.",
-    status: "live",
+    desc: "Raise GST-correct invoices, track arrears by age and record every receipt against a double-entry ledger.",
+    // Deliberately downgraded. Invoicing, the ledger and manual receipts are all proven,
+    // but online collection has never taken a real signed gateway webhook — so the badge
+    // says "in build" until it has. A society that reads "Available" and then cannot pay
+    // online learns to distrust every other badge on this page.
+    status: "building",
   },
   {
     icon: "🚗",
     title: "Vehicle & parking mgmt",
     desc: "Register vehicles, allot slots and flag unauthorised parking automatically.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "🕒",
     title: "Attendance & payroll",
     desc: "Reliable attendance for staff, with payroll-ready timesheets.",
-    status: "building",
+    status: "live",
   },
   {
     icon: "📊",
     title: "Analytics & reports",
     desc: "Live dashboards on footfall, incidents, collections and staff performance.",
-    status: "building",
+    status: "live",
   },
 ];
 

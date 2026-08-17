@@ -4,7 +4,7 @@ Single source of truth for scope. **No feature is removed from this file without
 instruction from Krishna.** Items deliberately not built are listed in "Cut / deferred" with
 reasons, not silently deleted.
 
-Last updated 15 Aug 2026 (second pass). Design detail lives in [design/](design/), remaining work in
+Last updated 17 Aug 2026 (console pass). Design detail lives in [design/](design/), remaining work in
 [BACKLOG.md](BACKLOG.md).
 
 **`completed` means built *and* covered by a test that would fail if it broke.** Code that
@@ -86,13 +86,13 @@ Legend: `planned` · `in-progress` · `unproven` · `completed`
 | Amenity booking with DB-level double-booking prevention | completed | endpoints added; overlap refused by the constraint |
 | Document repository with role-based access | planned |
 | Parking slot allocation | completed | plus vehicles and violation flagging |
-| Society admin console | completed | 9 pages incl. staff, operations and notices |
+| Society admin console | completed | 14 pages, every one of them writing; 93 console smoke checks |
 | Chart of accounts, trial balance, P&L, balance sheet | planned |
 | Tally-compatible export, PDF vouchers | planned |
 | Role-based accounting access (Admin / Assistant / DEO / Auditor) | planned |
 | Bulk bill clearing via bank statement or Excel upload | planned |
-| Helpdesk analytics — ageing, SLA breaches, vendor leaderboard | planned |
-| Ticket search and filter by flat, category, keyword, status | planned |
+| Helpdesk analytics — ageing, SLA breaches, vendor leaderboard | completed | Reports page; breach counts late resolutions too |
+| Ticket search and filter by flat, category, keyword, status | completed | search plus a status filter on the complaints page |
 | Visitor blacklist / watchlist | planned |
 
 ## Phase 3 — Pilot hardening
@@ -109,10 +109,10 @@ Legend: `planned` · `in-progress` · `unproven` · `completed`
 | State rule-packs (MCS Act, KAOA, RERA AOA) | planned |
 | TDS 194C/194J and Form 26Q data | planned |
 | Audit-ready report pack | planned |
-| Move-in / move-out workflow + digital NOC | planned |
+| Move-in / move-out workflow + digital NOC | in-progress | move in and move out done on the flats page; NOC still planned |
 | Asset register and maintenance schedule | planned |
 | Water tanker / utility monitoring | planned |
-| Staff attendance, payroll computation, verification workflow | planned |
+| Staff attendance, payroll computation, verification workflow | completed | check in/out, PIN, verification outcome, monthly timesheet with overrides shown |
 | Staff ratings, vendor directory and performance tracking | planned |
 | Voice complaint filing (8 languages) | completed | resident confirms before filing |
 | OCR — bank statements, meter readings, staff IDs | planned |

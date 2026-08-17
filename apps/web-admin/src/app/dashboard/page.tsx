@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
 
 import { Chip, Figure, Ledger, Loading, Problem, Shell } from "../../components/Shell";
 import { api, rupees, slaRemaining, timeAgo } from "../../lib/api";
@@ -34,49 +35,102 @@ interface GateEvent {
   verifiedOffline: boolean;
 }
 
+interface Alert {
+  id: string;
+  type: string;
+  raisedAt: string;
+  acknowledgedAt: string | null;
+}
+
+interface Approval {
+  id: string;
+  visitorName: string | null;
+  category: string;
+  requestedAt: string;
+}
+
 /**
- * The opening page of the register.
+ * The opening page.
  *
- * Ordered by what a committee actually acts on, not by what is easiest to compute:
- * money owed first, then complaints breaching their deadline, then the gate. A
- * dashboard that leads with "total visitors this week" is a dashboard nobody opens
- * twice.
+ * Ordered by what a committee acts on, not by what is easiest to compute: an alarm
+ * nobody has answered, then someone waiting at the barrier, then money owed, then
+ * complaints past their deadline. A dashboard that leads with "total visitors this week"
+ * is a dashboard nobody opens twice.
  */
 export default function Dashboard() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [gate, setGate] = useState<GateEvent[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [pending, setPending] = useState<Approval[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    void (async () => {
-      try {
-        // Fetched together: three sequential round trips to Singapore is a visible
-        // pause on an Indian connection, and this is the first screen anyone sees.
-        const [s, t, g] = await Promise.all([
-          api.get<Summary>("/v1/society/summary"),
-          api.get<Ticket[]>("/v1/tickets?status=open"),
-          api.get<GateEvent[]>("/v1/gate/inside"),
-        ]);
-        setSummary(s);
-        setTickets(t.slice(0, 8));
-        setGate(g.slice(0, 8));
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+  const load = useCallback(async () => {
+    try {
+      // Fetched together: five sequential round trips to Singapore is a visible pause on
+      // an Indian connection, and this is the first screen anyone sees.
+      const [s, t, g, a, p] = await Promise.all([
+        api.get<Summary>("/v1/society/summary"),
+        api.get<Ticket[]>("/v1/tickets?status=open"),
+        api.get<GateEvent[]>("/v1/gate/inside"),
+        // Neither of these is fatal — a guard with no money authority still needs the
+        // rest of this page to render.
+        api.get<Alert[]>("/v1/safety/sos").catch(() => [] as Alert[]),
+        api.get<Approval[]>("/v1/gate/approvals/pending").catch(() => [] as Approval[]),
+      ]);
+      setSummary(s);
+      setTickets(t.slice(0, 8));
+      setGate(g.slice(0, 8));
+      setAlerts(a);
+      setPending(p);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void load();
+    const timer = setInterval(() => void load(), 20_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  const unacked = alerts.filter((a) => !a.acknowledgedAt);
 
   return (
     <Shell
-      title="The Register"
-      lede="Where the society stands today — money owed, complaints open, who is inside."
+      title="Today"
+      lede="Where the society stands right now — alarms, the gate, money owed, complaints open."
     >
       {error ? <Problem error={error} /> : null}
       {loading ? <Loading /> : null}
+
+      {/* The only loud thing on any page in this console. */}
+      {unacked.length > 0 ? (
+        <div className="alarm-band settle">
+          <div>
+            <h2>
+              {unacked.length} SOS alert{unacked.length === 1 ? "" : "s"} nobody has answered
+            </h2>
+            <p>Raised {timeAgo(unacked[0]!.raisedAt)}. Someone is waiting.</p>
+          </div>
+          <Link className="btn" href="/operations/">
+            Open alerts
+          </Link>
+        </div>
+      ) : null}
+
+      {pending.length > 0 ? (
+        <div className="notice" data-tone="warn">
+          <strong>
+            {pending.length} visitor{pending.length === 1 ? " is" : "s are"} waiting at the gate
+          </strong>{" "}
+          for a flat to answer. The approval ladder is running — push, then a call, then the
+          flat&apos;s standing rule. <Link href="/gate/">Decide from here</Link>.
+        </div>
+      ) : null}
 
       {summary ? (
         <dl className="figures settle">
@@ -117,6 +171,11 @@ export default function Dashboard() {
         head={["Ticket", "Complaint", "Raised", "Status", "Deadline"]}
         empty="No open complaints. The register is clear."
         isEmpty={!loading && tickets.length === 0}
+        actions={
+          <Link className="btn" href="/complaints/" style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
+            All complaints
+          </Link>
+        }
       >
         {tickets.map((ticket) => {
           const sla = slaRemaining(ticket.slaDueAt);
@@ -146,6 +205,11 @@ export default function Dashboard() {
         head={["Visitor", "Category", "Entered", "Verified"]}
         empty="Nobody is signed in at the gate."
         isEmpty={!loading && gate.length === 0}
+        actions={
+          <Link className="btn" href="/gate/" style={{ fontSize: "0.78rem", padding: "4px 10px" }}>
+            Gate log
+          </Link>
+        }
       >
         {gate.map((event) => (
           <tr key={event.id}>

@@ -27,7 +27,8 @@
     "desktop:dev": "cd apps/desktop && npm run tauri dev",
     "desktop:build": "cd apps/desktop && npm run tauri build",
     "worker:dev": "npm run dev -w @watchmygate/worker",
-    "e2e:phase2": "node --env-file-if-exists=.env scripts/phase2-smoke.mjs"
+    "e2e:phase2": "node --env-file-if-exists=.env scripts/phase2-smoke.mjs",
+    "e2e:console": "node --env-file-if-exists=.env scripts/console-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
