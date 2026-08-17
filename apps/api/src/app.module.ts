@@ -7,6 +7,8 @@ import { AnalyticsService } from "./modules/analytics/analytics.service.js";
 import { DeliveriesController } from "./modules/deliveries/deliveries.controller.js";
 import { SafetyController } from "./modules/safety/safety.controller.js";
 import { SafetyService } from "./modules/safety/safety.service.js";
+import { MigrationController } from "./modules/migration/migration.controller.js";
+import { MigrationService } from "./modules/migration/migration.service.js";
 import { NoticesController } from "./modules/notices/notices.controller.js";
 import { NoticesService } from "./modules/notices/notices.service.js";
 import { ParkingController } from "./modules/parking/parking.controller.js";
@@ -56,6 +58,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     ParkingController,
     SafetyController,
     AnalyticsController,
+    MigrationController,
   ],
   providers: [
     AuthService,
@@ -75,6 +78,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     ParkingService,
     SafetyService,
     AnalyticsService,
+    MigrationService,
   ],
 })
 export class AppModule implements NestModule {
