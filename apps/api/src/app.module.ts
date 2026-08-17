@@ -2,6 +2,12 @@ import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common
 
 import { TenantMiddleware } from "./common/tenant.middleware.js";
 import { HealthController } from "./common/health.controller.js";
+import { DeliveriesController } from "./modules/deliveries/deliveries.controller.js";
+import { NoticesController } from "./modules/notices/notices.controller.js";
+import { NoticesService } from "./modules/notices/notices.service.js";
+import { ParkingController } from "./modules/parking/parking.controller.js";
+import { ParkingService } from "./modules/parking/parking.service.js";
+import { DeliveriesService } from "./modules/deliveries/deliveries.service.js";
 import { StorageService } from "./common/storage.service.js";
 import { TasksService } from "./common/tasks.service.js";
 import { AuthController } from "./modules/auth/auth.controller.js";
@@ -18,6 +24,8 @@ import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { PaymentsController } from "./modules/payments/payments.controller.js";
 import { PaymentsService } from "./modules/payments/payments.service.js";
 import { SocietyController } from "./modules/society/society.controller.js";
+import { StaffController } from "./modules/staff/staff.controller.js";
+import { StaffService } from "./modules/staff/staff.service.js";
 import { SocietyService } from "./modules/society/society.service.js";
 import { SmsService } from "./modules/notify/sms.service.js";
 
@@ -38,6 +46,10 @@ import { SmsService } from "./modules/notify/sms.service.js";
     InternalController,
     SocietyController,
     PaymentsController,
+    StaffController,
+    DeliveriesController,
+    NoticesController,
+    ParkingController,
   ],
   providers: [
     AuthService,
@@ -51,6 +63,10 @@ import { SmsService } from "./modules/notify/sms.service.js";
     ApprovalService,
     SocietyService,
     PaymentsService,
+    StaffService,
+    DeliveriesService,
+    NoticesService,
+    ParkingService,
   ],
 })
 export class AppModule implements NestModule {
