@@ -72,3 +72,5 @@ apps/mobile-guard/build/
 apps/mobile-guard/.dart_tool/
 apps/mobile-resident/build/
 apps/mobile-resident/.dart_tool/
+apps/mobile-resident/.gradle/
+apps/mobile-guard/.gradle/
