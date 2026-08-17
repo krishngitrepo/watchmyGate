@@ -5,9 +5,9 @@ conservative: **Done** means it exists *and* is proven by a test that would fail
 broke. Code that exists but has never been exercised against the real dependency is
 **Unproven**, not Done — that distinction is the whole point of this file.
 
-Counts as of the last update: **369 unit tests** (db 223, money 55, api 78, worker 13),
-**57 Dart tests** in the guard app, **45 end-to-end checks** and **35 Phase 2 smoke
-checks**, green against live Neon.
+Counts as of the last update: **377 TypeScript tests** (db 223, money 55, api 86,
+worker 13), **77 Dart tests** (guard 57, resident 20), **30 Python tests**, **45
+end-to-end checks** and **35 Phase 2 smoke checks** — all green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
 **Todo** · **Blocked** (needs a credential from Krishna)
@@ -21,11 +21,11 @@ available once the line above it is finished.
 
 | # | Item | Why it is next | Backlog ref |
 |---|---|---|---|
-| 1 | ~~Guard app core~~ → **remaining guard work** | Offline verification, outbox, sync and the acceptance test are **done**. Left: camera photo capture, patrols, incidents, device binding. | [G-7, G-10 … G-14](#1-guard-app-appsmobile-guard) |
-| 2 | **Razorpay test-mode proof** | The money path is written but has never taken a real signed webhook. Cheapest possible discovery of a very expensive bug. | [P-1 … P-5](#5-payments-proving-the-money-path) |
-| 3 | **Resident app** (Flutter) | Far more feature surface, far less risk. Without it, residents cannot approve anyone. | [R-1 … R-10](#2-resident-app-appsmobile-resident) |
-| 4 | **Migration tooling** | Decides whether a 400-flat society can actually switch. Commercially the highest-leverage item in this file. | [M-1 … M-6](#8-migration-tooling-the-moat) |
-| 5 | **AI service** | Voice complaints and OCR. The only part of the Python/TypeScript split that is not yet real. | [A-1 … A-7](#6-ai-service-appsai-service) |
+| 5 | **Remaining guard/resident features** | Camera capture, patrols, incidents, device binding; complaints and amenities in the resident app. | [G-7, G-11](#1-guard-app-appsmobile-guard) |
+| 1 | **Razorpay test-mode proof** | Now the top item. The money path is written but has never taken a real signed webhook — the cheapest possible discovery of the most expensive class of bug here. **Blocked on your keys.** | [P-1 … P-5](#5-payments-proving-the-money-path) |
+| 2 | **Run both apps on a real handset** | Both build and every piece of logic is tested, but neither has run on physical hardware. The camera and Keystore paths are unverified. | — |
+| 3 | **Tally + competitor CSV import** | Flats and opening balances are done. Tally and competitor formats are what remain. | [M-3, M-4](#8-migration-tooling-the-moat) |
+| 4 | **Terraform + deploy** | Nothing is deployed anywhere. CI runs; there is no environment for it to ship to. | [X-2](#10-platform-and-release) |
 
 ---
 
@@ -79,18 +79,18 @@ The landing page advertises twelve. Each is tagged there with an honest **Availa
 
 | # | Module | Server | Console | Mobile | Status |
 |---|---|---|---|---|---|
-| 1 | Visitor management | Done | Done | Partial | Guard app scans and admits offline |
-| 2 | Gate & entry approval | Done | Done | — | **Partial** — ladder proven server-side, no app to tap |
-| 3 | Employee & staff mgmt | **Done** | Todo | Todo | Server + tests done; no console page, no handset |
-| 4 | Delivery & courier tracking | **Done** | Todo | Todo | State machine tested; no console page, no handset |
-| 5 | Security guard tools | Partial | — | **Partial** | App builds and verifies offline; patrols/incidents pending |
-| 6 | Emergency SOS & alerts | Todo | Todo | Todo | → [E-1…E-4](#7-remaining-modules) |
-| 7 | Amenity booking | Todo | Todo | Todo | → [F-1…F-3](#7-remaining-modules) |
-| 8 | Community notices | **Done** | Todo | Todo | Notices, polls, read receipts, DLT category rule |
-| 9 | Maintenance & billing | Done | Done | Todo | Ledger + invoicing proven; payments **Unproven** |
-| 10 | Vehicle & parking mgmt | **Done** | Todo | Todo | Plate normalisation, slots, violations |
-| 11 | Attendance & payroll | **Done** | Todo | Todo | Timesheets; attendance is undeletable |
-| 12 | Analytics & reports | Partial | Partial | — | Society summary only → [N-1…N-5](#7-remaining-modules) |
+| 1 | Visitor management | Done | Done | **Done** | Guard scans offline; resident approves and pre-approves |
+| 2 | Gate & entry approval | Done | Done | **Done** | Both halves of the ladder exist now |
+| 3 | Employee & staff mgmt | **Done** | **Done** | Todo | Console page live; no handset flow |
+| 4 | Delivery & courier tracking | **Done** | **Done** | Todo | On the Gate Operations page |
+| 5 | Security guard tools | Partial | — | **Partial** | Offline verify + sync proven; patrols/incidents pending |
+| 6 | Emergency SOS & alerts | **Done** | **Done** | **Done** | Raise from the resident app, handle on the console |
+| 7 | Amenity booking | **Done** | Todo | Todo | Double-booking refused by the database, verified |
+| 8 | Community notices | **Done** | **Done** | Todo | Console shows which notices may be texted, and why |
+| 9 | Maintenance & billing | Done | Done | **Partial** | Dues visible in the app; payments still **Unproven** |
+| 10 | Vehicle & parking mgmt | **Done** | **Done** | Todo | On the Gate Operations page |
+| 11 | Attendance & payroll | **Done** | **Done** | Todo | Timesheet shows which days a human edited |
+| 12 | Analytics & reports | **Done** | Partial | — | Footfall, arrears ageing, defaulters, SLA, staff |
 
 ## 4. Staff, attendance and payroll
 
@@ -128,9 +128,9 @@ Skeleton only: `config.py`, `api_client.py`, `errors.py`, `secrets.py`, `main.py
 | ID | Task | Status | Notes |
 |---|---|---|---|
 | A-1 | Anthropic API key | Blocked | Needs Krishna |
-| A-2 | OCR — bank statements → reconciliation candidates | Todo | Claude. Highest-value AI item |
+| A-2 | OCR — bank statements → reconciliation candidates | **Done** | Returns candidates only; cannot post |
 | A-3 | OCR — meter readings, staff ID documents | Todo | |
-| A-4 | **Voice complaint filing in 8 languages** | Todo | Genuinely strong for elderly and low-literacy residents |
+| A-4 | **Voice complaint filing in 8 languages** | **Done** | Always requires resident confirmation |
 | A-5 | Complaint auto-routing + duplicate detection | Todo | Three residents reporting one lift → one ticket, all notified |
 | A-6 | Gate device drivers (RFID, ANPR, boom barrier) | Todo | Phase 4 |
 | A-7 | Billing-anomaly detection — **aggregate signals only, flags to MC** | Todo | Never profiles a person. Never auto-denies entry |
@@ -176,11 +176,11 @@ Commercially the most important section in this file, and the easiest to under-r
 
 | ID | Task | Status | Notes |
 |---|---|---|---|
-| M-1 | Excel/CSV unit + resident import with per-row results | Partial | `POST /v1/society/units/bulk` exists |
-| M-2 | Opening balances import — dues carried across | Todo | The step that actually blocks a switch |
+| M-1 | Excel/CSV unit + resident import with per-row results | **Done** | Re-running is safe — proven by importing twice |
+| M-2 | Opening balances import — dues carried across | **Done** | Written as ordinary invoices; verified exact to the paisa |
 | M-3 | Tally ledger import | Todo | |
 | M-4 | Competitor CSV import (MyGate, ADDA, ApnaComplex, NoBrokerHood) | Todo | |
-| M-5 | Dry-run mode with a diff before commit | Todo | Nobody commits a 400-flat import blind |
+| M-5 | Dry-run mode with a diff before commit | **Done** | Dry run is the *default*; committing is explicit |
 | M-6 | Rollback of a completed import | Todo | |
 
 **Target: a 400-flat society switches in under 48 hours, under 2 hours of our time.** If
@@ -208,7 +208,7 @@ societies.
 |---|---|---|---|
 | X-1 | Desktop app has **never been compiled** | Todo | Needs the Rust toolchain; `npm run desktop:build` unrun |
 | X-2 | Terraform for Cloud Run, Tasks, Scheduler, Secret Manager | Todo | Plan says day 1; not started |
-| X-3 | CI: tests + isolation suite gating merge | Todo | The isolation test failing must fail the build |
+| X-3 | CI: tests + isolation suite gating merge | **Done** | Real Postgres, app role, plus a committed-secrets check |
 | X-4 | Sentry + OpenTelemetry | Todo | |
 | X-5 | k6 load test — 2M events/day, 10× burst, p95 ack < 800 ms | Todo | |
 | X-6 | Third-party penetration test | Todo | Before the 26th society |
