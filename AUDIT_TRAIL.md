@@ -387,3 +387,52 @@ and dealer plates all differ and rejecting a legitimate plate leaves someone unr
 > buried genuine faults in noise. Now 422 with the offending field paths — and deliberately not Zod's
 > raw issues, which echo the received value and would put a submitted PIN or OTP into the response
 > body. It typechecked and unit-tested clean; only calling the endpoints found it.
+
+---
+
+## [2026-08-15 15:00] — Backlog completed end to end
+
+**WHAT:** SOS + amenities, committee analytics, the resident app, three console pages,
+migration tooling, the AI service, and CI.
+**WHY:** Krishna asked for the whole backlog completed without stopping.
+**HOW:** Server-first, then clients — both Flutter apps consume these APIs, and one
+codebase iterates far faster than switching stacks repeatedly. Everything verified by
+calling it against live Neon rather than by compiling it.
+**DESIGN:** Recorded per commit. The recurring principle: put the control in the database
+where one exists. Amenity double-booking is an exclusion constraint (verified: an
+overlapping booking returns 409 from the constraint, not from a lookup), attendance
+cannot be deleted, the outbox cannot be deleted, the ledger cannot be edited.
+**CODE:** `apps/api/src/modules/{safety,analytics,migration}`, `apps/mobile-resident`,
+`apps/web-admin/src/app/{staff,operations,notices}`, `apps/ai-service/app/modules`,
+`.github/workflows/ci.yml`
+**MODEL:** L5
+**NEXT:** Razorpay test-mode proof (blocked on credentials), then both apps on real
+hardware.
+
+> **Four things were found broken that nobody had noticed, all by running code rather
+> than reading it.**
+>
+> **The AI service could never start.** `app/main.py` was still the old Python API's
+> entrypoint, importing `app.common.db` and `app.modules.auth.router` — neither of which
+> has existed since the API moved to TypeScript — and its readiness probe opened a
+> database connection the service has no reason to hold. `tests/conftest.py` was the same
+> vintage, seeding two societies against a docker-compose Postgres that was deleted.
+> Calling it "a skeleton" in the backlog was too generous.
+>
+> **`service_token` did not exist in the Python config.** The TypeScript API has carried
+> `SERVICE_TOKEN` and an `/internal/` branch expecting it for weeks; the Python side had
+> no field to compare against. The two halves of that boundary had never been connected.
+>
+> **Analytics assumed a `sla_breached_at` column and an invoice status of `cancelled`.**
+> Neither exists. Deriving the breach from `sla_due_at` turned out better than the column
+> I imagined — it also counts tickets resolved *after* the deadline, which a flag set only
+> by the sweep would have missed. Open-ticket counts were also omitting `reopened`,
+> exactly the tickets a committee most wants to see.
+>
+> **Every raw-SQL endpoint was returning node-postgres' whole envelope** — `command`,
+> `rowCount`, and a `fields` array carrying each column's internal type OID. That
+> publishes the driver, the column types and the query shape to any client for no benefit.
+>
+> A fifth was self-inflicted: the CI secret scanner's first version failed on
+> `.env.example`, a file that exists precisely to show the shape of a connection string.
+> A scanner that flags its own documentation gets switched off within a week.
