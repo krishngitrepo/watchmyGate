@@ -166,6 +166,22 @@ afterAll(async () => {
   // Ordered by dependency; the owner bypasses RLS so this reaches both societies.
   await owner.query("BEGIN");
   for (const table of [
+    // Phase 2 first, children before parents: parking_violations → parking_slots →
+    // vehicles → staff, and the poll/notice chain. None of these carry fixtures today,
+    // but a list that is only correct while it is unused is a trap for whoever adds the
+    // first one.
+    "poll_votes",
+    "poll_options",
+    "notice_reads",
+    "notices",
+    "parking_violations",
+    "parking_slots",
+    "vehicles",
+    "staff_attendance",
+    "staff_assignments",
+    "staff",
+    "deliveries",
+    "dlt_templates",
     "journal_lines",
     "journal_entries",
     "ledger_accounts",
@@ -243,6 +259,20 @@ describe.skipIf(!configured)("society A cannot read society B", () => {
     "receipt_allocations",
     "amenities",
     "amenity_bookings",
+    // Phase 2. `dlt_templates` is deliberately absent: its policy also admits
+    // platform-wide rows where society_id IS NULL, so a plain "sees zero of B's rows"
+    // assertion does not describe it. It is covered separately below.
+    "staff",
+    "staff_assignments",
+    "staff_attendance",
+    "deliveries",
+    "notices",
+    "notice_reads",
+    "poll_options",
+    "poll_votes",
+    "vehicles",
+    "parking_slots",
+    "parking_violations",
   ];
 
   it.each(tenantTables)(
@@ -257,6 +287,55 @@ describe.skipIf(!configured)("society A cannot read society B", () => {
       expect(rows[0]!.n).toBe("0");
     },
   );
+
+  /**
+   * DLT templates are the one table with a deliberately asymmetric policy: reads admit
+   * platform-wide rows (society_id IS NULL) so every society can use the shared
+   * templates, while writes stay society-scoped. Both halves need proving — a policy
+   * that is loose on reads and silently loose on writes is how a society ends up able
+   * to edit the template every other society sends with.
+   */
+  it("dlt_templates — a society sees platform templates but not another society's", async () => {
+    const platform = await asSociety(fx.societyA, (c) =>
+      c.query<{ n: string }>(
+        "SELECT count(*)::text n FROM dlt_templates WHERE society_id IS NULL",
+      ),
+    );
+    expect(Number(platform.rows[0]!.n)).toBeGreaterThanOrEqual(0);
+
+    const other = await asSociety(fx.societyA, (c) =>
+      c.query<{ n: string }>(
+        "SELECT count(*)::text n FROM dlt_templates WHERE society_id = $1",
+        [fx.societyB],
+      ),
+    );
+    expect(other.rows[0]!.n).toBe("0");
+  });
+
+  it("dlt_templates — a society cannot insert a row belonging to another", async () => {
+    await expect(
+      asSociety(fx.societyA, (c) =>
+        c.query(
+          `INSERT INTO dlt_templates (society_id, code, provider_id, header, category, body)
+           VALUES ($1, 'stolen', 'p', 'WMGATE', 'transactional', 'x')`,
+          [fx.societyB],
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
+
+  it("dlt_templates — a society cannot insert a platform-wide template", async () => {
+    // WITH CHECK requires society_id to equal the current society, so NULL fails too.
+    // That is intended: platform templates are seeded by a migration, never by a tenant.
+    await expect(
+      asSociety(fx.societyA, (c) =>
+        c.query(
+          `INSERT INTO dlt_templates (society_id, code, provider_id, header, category, body)
+           VALUES (NULL, 'sneaky', 'p', 'WMGATE', 'promotional', 'x')`,
+        ),
+      ),
+    ).rejects.toThrow(/row-level security/i);
+  });
 
   it("cannot read B's complaint even knowing its exact primary key", async () => {
     const { rows } = await asSociety(fx.societyA, (c) =>

@@ -66,6 +66,11 @@ function canonicalDrizzleType(sqlType: string): string {
   const t = sqlType.toLowerCase().trim();
   if (t === "timestamp with time zone") return "timestamp with time zone";
   if (t === "timestamp") return "timestamp without time zone";
+  // Same pair for `time`: Drizzle emits the short spelling, information_schema the long
+  // one. They are the same type, so treating them as a mismatch would report a fault
+  // that is not there — and a parity test that cries wolf stops being read.
+  if (t === "time with time zone") return "time with time zone";
+  if (t === "time") return "time without time zone";
   return t;
 }
 

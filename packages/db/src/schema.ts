@@ -22,6 +22,7 @@ import {
   pgEnum,
   pgTable,
   text,
+  time,
   timestamp,
   uniqueIndex,
   uuid,
@@ -1103,4 +1104,366 @@ export const amenityBookings = pgTable(
     ...timestamps,
   },
   (t) => [index("ix_booking_amenity").on(t.societyId, t.amenityId, t.startsAt)],
+);
+
+// ==========================================================================
+// Phase 2 — staff, deliveries, notices, vehicles, parking
+// Tables in migration 0007, controls in 0008.
+// ==========================================================================
+
+export const staffKind = pgEnum("staff_kind", [
+  "maid",
+  "cook",
+  "nanny",
+  "driver",
+  "gardener",
+  "security",
+  "vendor_staff",
+  "other",
+]);
+export const staffStatus = pgEnum("staff_status", [
+  "pending",
+  "active",
+  "suspended",
+  "exited",
+]);
+export const verificationStatus = pgEnum("verification_status", [
+  "not_started",
+  "submitted",
+  "verified",
+  "rejected",
+  "expired",
+]);
+export const attendanceMethod = pgEnum("attendance_method", [
+  "gate_scan",
+  "pin",
+  "card",
+  "manual",
+  "biometric",
+]);
+export const deliveryStatus = pgEnum("delivery_status", [
+  "at_gate",
+  "awaiting_resident",
+  "held_at_gate",
+  "out_for_doorstep",
+  "delivered",
+  "collected",
+  "returned",
+  "refused",
+]);
+export const noticeKind = pgEnum("notice_kind", [
+  "circular",
+  "event",
+  "poll",
+  "emergency",
+]);
+export const noticeAudience = pgEnum("notice_audience", [
+  "society",
+  "tower",
+  "owners",
+  "tenants",
+  "committee",
+  "custom",
+]);
+export const dltCategory = pgEnum("dlt_category", [
+  "transactional",
+  "service_explicit",
+  "service_implicit",
+  "promotional",
+]);
+export const vehicleKind = pgEnum("vehicle_kind", [
+  "car",
+  "two_wheeler",
+  "bicycle",
+  "commercial",
+  "other",
+]);
+export const parkingKind = pgEnum("parking_kind", [
+  "covered",
+  "open",
+  "stack",
+  "visitor",
+  "accessible",
+  "ev",
+]);
+
+/**
+ * Staff.
+ *
+ * There is deliberately no column that could hold an Aadhaar number — only the
+ * verification outcome and a masked last-4. Aadhaar Act §57 was struck down, so a
+ * private entity cannot mandate Aadhaar authentication.
+ */
+export const staff = pgTable(
+  "staff",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    personId: uuid("person_id"),
+    fullName: varchar("full_name", { length: 160 }).notNull(),
+    phone: varchar("phone", { length: 16 }).notNull(),
+    kind: staffKind("kind").notNull(),
+    status: staffStatus("status").notNull().default("pending"),
+    photoKey: varchar("photo_key", { length: 400 }),
+    employerUnitId: uuid("employer_unit_id"),
+    vendorName: varchar("vendor_name", { length: 160 }),
+    verification: verificationStatus("verification").notNull().default("not_started"),
+    verificationRef: varchar("verification_ref", { length: 120 }),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }),
+    idLast4: varchar("id_last4", { length: 4 }),
+    policeVerifiedAt: timestamp("police_verified_at", { withTimezone: true }),
+    gatePinHash: varchar("gate_pin_hash", { length: 200 }),
+    dailyStart: time("daily_start"),
+    dailyEnd: time("daily_end"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [
+    index("ix_staff_society").on(t.societyId, t.status),
+    index("ix_staff_phone").on(t.societyId, t.phone),
+    index("ix_staff_employer").on(t.societyId, t.employerUnitId),
+  ],
+);
+
+/** A maid working six flats is the normal case, not the exception. */
+export const staffAssignments = pgTable(
+  "staff_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    staffId: uuid("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    unitId: uuid("unit_id").notNull(),
+    startedOn: date("started_on").notNull().defaultNow(),
+    endedOn: date("ended_on"),
+    monthlyRate: numeric("monthly_rate", { precision: 18, scale: 4 }),
+    ...timestamps,
+  },
+  (t) => [index("ix_assignment_unit").on(t.societyId, t.unitId)],
+);
+
+/**
+ * Attendance — a wage record, so it can never be deleted (trigger in 0008).
+ * Timestamps are server-assigned; a gate handset's clock is routinely hours out.
+ */
+export const staffAttendance = pgTable(
+  "staff_attendance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    staffId: uuid("staff_id")
+      .notNull()
+      .references(() => staff.id, { onDelete: "cascade" }),
+    gateId: uuid("gate_id"),
+    workDate: date("work_date").notNull(),
+    checkedInAt: timestamp("checked_in_at", { withTimezone: true }).notNull(),
+    checkedOutAt: timestamp("checked_out_at", { withTimezone: true }),
+    method: attendanceMethod("method").notNull(),
+    overriddenBy: uuid("overridden_by"),
+    overrideNote: text("override_note"),
+    ...timestamps,
+  },
+  (t) => [index("ix_attendance_day").on(t.societyId, t.workDate)],
+);
+
+/** Gate-to-doorstep, with the handover proof that makes "delivered" more than a claim. */
+export const deliveries = pgTable(
+  "deliveries",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id"),
+    gateEventId: uuid("gate_event_id"),
+    courier: varchar("courier", { length: 120 }).notNull(),
+    trackingRef: varchar("tracking_ref", { length: 120 }),
+    parcelCount: integer("parcel_count").notNull().default(1),
+    status: deliveryStatus("status").notNull().default("at_gate"),
+    arrivedAt: timestamp("arrived_at", { withTimezone: true }).notNull().defaultNow(),
+    heldAtGateAt: timestamp("held_at_gate_at", { withTimezone: true }),
+    handoverAt: timestamp("handover_at", { withTimezone: true }),
+    handoverTo: varchar("handover_to", { length: 160 }),
+    handoverPhotoKey: varchar("handover_photo_key", { length: 400 }),
+    handoverBy: uuid("handover_by"),
+    note: text("note"),
+    ...timestamps,
+  },
+  (t) => [
+    index("ix_delivery_unit").on(t.societyId, t.unitId, t.status),
+    index("ix_delivery_open").on(t.societyId, t.status, t.arrivedAt),
+  ],
+);
+
+export const notices = pgTable(
+  "notices",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    kind: noticeKind("kind").notNull().default("circular"),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body").notNull(),
+    audience: noticeAudience("audience").notNull().default("society"),
+    audienceRef: jsonb("audience_ref"),
+    isPinned: boolean("is_pinned").notNull().default(false),
+    publishAt: timestamp("publish_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    eventAt: timestamp("event_at", { withTimezone: true }),
+    eventPlace: varchar("event_place", { length: 200 }),
+    createdBy: uuid("created_by").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index("ix_notice_feed").on(t.societyId, t.publishAt)],
+);
+
+/** "Did anyone actually read the circular" is a committee's first question. */
+export const noticeReads = pgTable("notice_reads", {
+  noticeId: uuid("notice_id")
+    .notNull()
+    .references(() => notices.id, { onDelete: "cascade" }),
+  personId: uuid("person_id").notNull(),
+  societyId: uuid("society_id")
+    .notNull()
+    .references(() => societies.id),
+  readAt: timestamp("read_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const pollOptions = pgTable(
+  "poll_options",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    noticeId: uuid("notice_id")
+      .notNull()
+      .references(() => notices.id, { onDelete: "cascade" }),
+    label: varchar("label", { length: 200 }).notNull(),
+    position: integer("position").notNull().default(0),
+  },
+  (t) => [index("ix_poll_option_notice").on(t.noticeId, t.position)],
+);
+
+/** One vote per person, enforced by the primary key rather than by application care. */
+export const pollVotes = pgTable(
+  "poll_votes",
+  {
+    noticeId: uuid("notice_id")
+      .notNull()
+      .references(() => notices.id, { onDelete: "cascade" }),
+    personId: uuid("person_id").notNull(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    optionId: uuid("option_id")
+      .notNull()
+      .references(() => pollOptions.id, { onDelete: "cascade" }),
+    votedAt: timestamp("voted_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_poll_vote_option").on(t.optionId)],
+);
+
+/**
+ * DLT template registry.
+ *
+ * The registered category decides whether a message may reach a DND number, so it is a
+ * row here rather than a constant in the sending code — that is what lets the notify
+ * service refuse a promotional send without a human remembering to.
+ *
+ * `societyId` NULL means a platform-wide template available to every society.
+ */
+export const dltTemplates = pgTable("dlt_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id").references(() => societies.id),
+  code: varchar("code", { length: 80 }).notNull(),
+  providerId: varchar("provider_id", { length: 120 }).notNull(),
+  header: varchar("header", { length: 20 }).notNull(),
+  category: dltCategory("category").notNull(),
+  body: text("body").notNull(),
+  variables: jsonb("variables"),
+  isActive: boolean("is_active").notNull().default(true),
+  registeredAt: timestamp("registered_at", { withTimezone: true }),
+  ...timestamps,
+});
+
+/**
+ * Vehicles.
+ *
+ * `plate` is normalised (uppercase, alphanumeric only) and `plateDisplay` keeps what a
+ * human typed. The same car is written three ways by three guards, and a lookup that
+ * misses is a resident stopped at their own gate.
+ */
+export const vehicles = pgTable(
+  "vehicles",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    unitId: uuid("unit_id"),
+    staffId: uuid("staff_id").references(() => staff.id, { onDelete: "set null" }),
+    plate: varchar("plate", { length: 16 }).notNull(),
+    plateDisplay: varchar("plate_display", { length: 24 }).notNull(),
+    kind: vehicleKind("kind").notNull().default("car"),
+    makeModel: varchar("make_model", { length: 120 }),
+    colour: varchar("colour", { length: 40 }),
+    stickerNo: varchar("sticker_no", { length: 40 }),
+    isActive: boolean("is_active").notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [index("ix_vehicle_unit").on(t.societyId, t.unitId)],
+);
+
+/** Allotment lives on the slot, so two rows can never claim the same space. */
+export const parkingSlots = pgTable(
+  "parking_slots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    code: varchar("code", { length: 40 }).notNull(),
+    kind: parkingKind("kind").notNull().default("open"),
+    towerId: uuid("tower_id"),
+    level: varchar("level", { length: 20 }),
+    unitId: uuid("unit_id"),
+    vehicleId: uuid("vehicle_id").references(() => vehicles.id, { onDelete: "set null" }),
+    allottedAt: timestamp("allotted_at", { withTimezone: true }),
+    monthlyRate: numeric("monthly_rate", { precision: 18, scale: 4 })
+      .notNull()
+      .default("0"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex("uq_slot_code").on(t.societyId, t.code)],
+);
+
+export const parkingViolations = pgTable(
+  "parking_violations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    slotId: uuid("slot_id").references(() => parkingSlots.id, { onDelete: "set null" }),
+    vehicleId: uuid("vehicle_id").references(() => vehicles.id, { onDelete: "set null" }),
+    plate: varchar("plate", { length: 16 }).notNull(),
+    reason: varchar("reason", { length: 120 }).notNull(),
+    photoKey: varchar("photo_key", { length: 400 }),
+    reportedBy: uuid("reported_by"),
+    reportedAt: timestamp("reported_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [index("ix_violation_open").on(t.societyId, t.resolvedAt)],
 );
