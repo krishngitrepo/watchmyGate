@@ -2,7 +2,11 @@ import { Module, type MiddlewareConsumer, type NestModule } from "@nestjs/common
 
 import { TenantMiddleware } from "./common/tenant.middleware.js";
 import { HealthController } from "./common/health.controller.js";
+import { AnalyticsController } from "./modules/analytics/analytics.controller.js";
+import { AnalyticsService } from "./modules/analytics/analytics.service.js";
 import { DeliveriesController } from "./modules/deliveries/deliveries.controller.js";
+import { SafetyController } from "./modules/safety/safety.controller.js";
+import { SafetyService } from "./modules/safety/safety.service.js";
 import { NoticesController } from "./modules/notices/notices.controller.js";
 import { NoticesService } from "./modules/notices/notices.service.js";
 import { ParkingController } from "./modules/parking/parking.controller.js";
@@ -50,6 +54,8 @@ import { SmsService } from "./modules/notify/sms.service.js";
     DeliveriesController,
     NoticesController,
     ParkingController,
+    SafetyController,
+    AnalyticsController,
   ],
   providers: [
     AuthService,
@@ -67,6 +73,8 @@ import { SmsService } from "./modules/notify/sms.service.js";
     DeliveriesService,
     NoticesService,
     ParkingService,
+    SafetyService,
+    AnalyticsService,
   ],
 })
 export class AppModule implements NestModule {
