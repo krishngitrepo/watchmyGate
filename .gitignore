@@ -66,3 +66,9 @@ package-lock.json.bak
 # Next.js static export output
 apps/web-admin/out/
 apps/web-admin/.next/
+
+# Flutter build output
+apps/mobile-guard/build/
+apps/mobile-guard/.dart_tool/
+apps/mobile-resident/build/
+apps/mobile-resident/.dart_tool/
