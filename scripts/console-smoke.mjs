@@ -771,6 +771,101 @@ async function main() {
   );
 
 
+  // ------------------------------------------------------------- privacy
+  console.log("");
+  console.log("--- DPDP ---");
+
+  const dpo = await call("GET", "/v1/privacy/notice");
+  check("the DPO is published in-app", ok(dpo) && Boolean(dpo.body?.dataProtectionOfficer?.email), why(dpo));
+  check(
+    "what we keep and for how long is stated",
+    Array.isArray(dpo.body?.whatWeKeepAndForHowLong) && dpo.body.whatWeKeepAndForHowLong.length > 0,
+    why(dpo),
+  );
+
+  const noticeVersion = `smoke-${stamp}`;
+  const privacyNotice = await call("POST", "/v1/privacy/notices", {
+    purpose: "gate_photos",
+    version: noticeVersion,
+    body: "We photograph visitors at the gate and keep the photograph for six months so a resident can confirm who called.",
+  });
+  check("notice text can be published", ok(privacyNotice), why(privacyNotice));
+
+  // Consent for a notice nobody can produce afterwards is consent to nothing.
+  const orphan = await call("POST", "/v1/privacy/consents", {
+    purpose: "marketing",
+    noticeVersion: "no-such-version",
+    granted: true,
+  });
+  check("consent without published notice text is refused", orphan.status === 422, why(orphan));
+
+  const consent = await call("POST", "/v1/privacy/consents", {
+    purpose: "gate_photos",
+    noticeVersion,
+    granted: true,
+  });
+  check("a consent is recorded", ok(consent), why(consent));
+  check(
+    "the consent is bound to the notice by hash",
+    typeof consent.body?.noticeTextHash === "string" && consent.body.noticeTextHash.length === 64,
+    why(consent),
+  );
+
+  const withdrawn = await call("DELETE", `/v1/privacy/consents/${consent.body?.id}`);
+  check("withdrawal is one call", ok(withdrawn), why(withdrawn));
+  check(
+    "the consequence of withdrawing is stated, not buried",
+    typeof withdrawn.body?.consequence === "string",
+    why(withdrawn),
+  );
+
+  const replayed = await call("DELETE", `/v1/privacy/consents/${consent.body?.id}`);
+  check("withdrawal cannot be replayed", replayed.status === 409, why(replayed));
+
+  const exported = await call("GET", "/v1/privacy/export");
+  check("a person can export everything held about them", ok(exported), why(exported));
+  check(
+    "the export says what it contains",
+    typeof exported.body?.note === "string" && Array.isArray(exported.body?.consents),
+    why(exported),
+  );
+
+  const retention = await call("GET", "/v1/privacy/retention");
+  check("retention policy is published", ok(retention), why(retention));
+  check(
+    "gate records are capped at six months by default",
+    retention.body?.find((r) => r.subject === "gate_events")?.defaultDays === 180,
+    why(retention),
+  );
+
+  const purge = await call("POST", "/v1/privacy/retention/purge", {});
+  check("the purge runs", ok(purge) && Array.isArray(purge.body?.runs), why(purge));
+  const runs = await call("GET", "/v1/privacy/retention/runs");
+  // A retention policy nobody runs is a lie with a number in it.
+  check("every purge is logged", ok(runs) && runs.body.length > 0, why(runs));
+
+  const thinReason = await call("POST", "/v1/privacy/cctv/access", {
+    cameraRef: "gate-1",
+    fromTs: "2026-08-24T10:00:00.000Z",
+    toTs: "2026-08-24T10:30:00.000Z",
+    reason: "looking",
+  });
+  check("watching footage needs a real reason", thinReason.status === 422, why(thinReason));
+
+  const cctv = await call("POST", "/v1/privacy/cctv/access", {
+    cameraRef: "gate-1",
+    fromTs: "2026-08-24T10:00:00.000Z",
+    toTs: "2026-08-24T10:30:00.000Z",
+    reason: "Reviewing a reported package theft on 24 August",
+  });
+  check("a footage access is logged", ok(cctv), why(cctv));
+  check(
+    "the committee can see who has been watching",
+    ok(await call("GET", "/v1/privacy/cctv/access")),
+    "cctv log",
+  );
+
+
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");
 

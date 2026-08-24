@@ -1467,3 +1467,127 @@ export const parkingViolations = pgTable(
   },
   (t) => [index("ix_violation_open").on(t.societyId, t.resolvedAt)],
 );
+
+// ==========================================================================
+// DPDP Act 2023 / Rules 2025 — tables in migration 0009, controls in the same file.
+//
+// Full substantive compliance is due 13 May 2027 with penalties to Rs 250 crore, so
+// this is dated work rather than a backlog item.
+//
+// The controls that matter are not expressible in Drizzle and live in the SQL: consents
+// and the CCTV log are append-only by trigger, and notice text is immutable. See
+// 0009_dpdp.sql — a control that only holds while the calling code is correct is not a
+// control.
+// ==========================================================================
+
+/**
+ * The exact words a person agreed to.
+ *
+ * Without this, "they consented to v3" is unfalsifiable — and a society that quietly
+ * edits v3 has rewritten what every resident agreed to. `consents.noticeTextHash` must
+ * match `bodyHash`, which ties a consent to words rather than to a version label.
+ */
+export const consentNotices = pgTable("consent_notices", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  societyId: uuid("society_id").references(() => societies.id),
+  purpose: varchar("purpose", { length: 120 }).notNull(),
+  version: varchar("version", { length: 32 }).notNull(),
+  /** DPDP requires notice in English or an Eighth Schedule language, at the person's option. */
+  language: varchar("language", { length: 8 }).notNull().default("en"),
+  body: text("body").notNull(),
+  bodyHash: varchar("body_hash", { length: 64 }).notNull(),
+  effectiveFrom: timestamp("effective_from", { withTimezone: true }).notNull().defaultNow(),
+  retiredAt: timestamp("retired_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * The right to erasure, as a request with an outcome.
+ *
+ * Not an immediate delete, because the honest answer to "erase everything about me" is
+ * never simply yes: financial records are retained under statutory exemption, and so are
+ * audit entries and gate events involving other people. The request records what went,
+ * what stayed, and why — a workflow promising total erasure while quietly keeping the
+ * ledger would be worse than one that says plainly what it keeps.
+ */
+export const erasureRequests = pgTable(
+  "erasure_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id").references(() => societies.id),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    requestedBy: uuid("requested_by").references(() => persons.id),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    status: varchar("status", { length: 16 }).notNull().default("received"),
+    dueBy: timestamp("due_by", { withTimezone: true }).notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    completedBy: uuid("completed_by").references(() => persons.id),
+    erased: jsonb("erased"),
+    retained: jsonb("retained"),
+    retentionBasis: text("retention_basis"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index("ix_erasure_person").on(t.personId, t.requestedAt),
+    index("ix_erasure_due").on(t.status, t.dueBy),
+  ],
+);
+
+/**
+ * Who looked at footage, and why.
+ *
+ * The usual failure here is not a breach — it is a committee member idly watching who
+ * visits whom. Every access carries a stated reason of at least ten characters, checked
+ * by the database, and the log cannot be altered or deleted.
+ */
+export const cctvAccessLog = pgTable(
+  "cctv_access_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => persons.id),
+    cameraRef: varchar("camera_ref", { length: 120 }).notNull(),
+    fromTs: timestamp("from_ts", { withTimezone: true }).notNull(),
+    toTs: timestamp("to_ts", { withTimezone: true }).notNull(),
+    reason: text("reason").notNull(),
+    accessedAt: timestamp("accessed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_cctv_society").on(t.societyId, t.accessedAt)],
+);
+
+/** Purpose limitation with a number attached. Defaults live in the API. */
+export const retentionPolicies = pgTable(
+  "retention_policies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    subject: varchar("subject", { length: 40 }).notNull(),
+    days: integer("days").notNull(),
+    reason: text("reason"),
+    updatedBy: uuid("updated_by").references(() => persons.id),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("uq_retention_subject").on(t.societyId, t.subject)],
+);
+
+/** Every purge that ran. A retention policy nobody runs is a lie with a number in it. */
+export const retentionRuns = pgTable(
+  "retention_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id").references(() => societies.id),
+    subject: varchar("subject", { length: 40 }).notNull(),
+    cutoff: timestamp("cutoff", { withTimezone: true }).notNull(),
+    rowsRemoved: integer("rows_removed").notNull().default(0),
+    ranAt: timestamp("ran_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index("ix_retention_run").on(t.societyId, t.ranAt)],
+);

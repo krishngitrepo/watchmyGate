@@ -67,6 +67,14 @@ const SECTIONS: {
   },
   {
     group: "Setup",
+    pages: [
+      // Not admin-gated. Everyone has statutory rights over their own data, and a
+      // privacy page a resident cannot open is a privacy page that protects nobody.
+      { href: "/privacy/", label: "Privacy" },
+    ],
+  },
+  {
+    group: "Admin",
     roles: ["society_admin"],
     pages: [{ href: "/migration/", label: "Import Data" }],
   },
