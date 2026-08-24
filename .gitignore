@@ -74,3 +74,6 @@ apps/mobile-resident/build/
 apps/mobile-resident/.dart_tool/
 apps/mobile-resident/.gradle/
 apps/mobile-guard/.gradle/
+
+# Scratch access token written by local smoke runs.
+.token.tmp
