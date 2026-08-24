@@ -471,7 +471,13 @@ export function Bar({
   display: string;
   tone?: "arrears" | "settled" | "gold";
 }) {
-  const pct = max > 0 ? Math.max(1, Math.round((value / max) * 100)) : 0;
+  /*
+   * Zero draws nothing. The `Math.max(1, …)` floor keeps a tiny-but-real value visible,
+   * but applying it to an actual zero paints a stub that reads as "a small amount" —
+   * which on an arrears chart is the difference between "nobody is 90 days late" and
+   * "somebody is".
+   */
+  const pct = value <= 0 || max <= 0 ? 0 : Math.max(1, Math.round((value / max) * 100));
   return (
     <div className="bar-row">
       <span className="bar-label" title={label}>

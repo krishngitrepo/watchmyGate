@@ -5,8 +5,8 @@
  * worth being deliberate about:
  *
  * 1. **The API base URL is a runtime value, not a build-time one.** The same `out/`
- *    directory is packaged into the Tauri desktop app and served from a static host, and
- *    those point at different API origins. Baking it in at build time would mean two
+ *    directory is packaged into the Electron desktop app and served from a static host,
+ *    and those point at different API origins. Baking it in at build time would mean two
  *    builds of identical code.
  *
  * 2. **Tokens live in memory plus sessionStorage, never localStorage.** localStorage
@@ -33,8 +33,8 @@ export class ApiError extends Error {
 
 export function apiBase(): string {
   if (typeof window === "undefined") return "";
-  // Set by the deployment (a small config.js, or Tauri's injected global). Falls back
-  // to the local API so `npm run dev` works with no configuration at all.
+  // Set by the deployment (a small config.js, or the desktop shell's preload). Falls
+  // back to the local API so `npm run dev` works with no configuration at all.
   const configured = (window as { __WMG_API__?: string }).__WMG_API__;
   return configured ?? "http://localhost:8080";
 }

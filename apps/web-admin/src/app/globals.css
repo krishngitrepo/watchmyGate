@@ -21,8 +21,8 @@
  * Structural class names are unchanged (`.shell`, `.ledger`, `.figure`, `.chip`) so the
  * retheme is a stylesheet change rather than a rewrite of every page.
  *
- * Fonts come from `layout.tsx` via `next/font`, self-hosted: Tauri's CSP blocks external
- * hosts, so a font CDN would silently fall back to system sans in the desktop build —
+ * Fonts come from `layout.tsx` via `next/font`, self-hosted: the desktop build's CSP
+ * blocks external hosts, so a font CDN would silently fall back to system sans there —
  * losing the typographic identity on precisely the build handed to a society.
  */
 
@@ -663,6 +663,24 @@ button[data-size="sm"] {
   font-size: 0.78rem;
 }
 
+/*
+ * A link that has to sit next to real buttons, so it borrows their box.
+ *
+ * Without this a `<Link className="btn">` keeps the anchor's underline and inline
+ * layout, so it reads as underlined text wearing a border. Three of these sit on the
+ * dashboard.
+ */
+a.btn {
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+  color: var(--ink);
+}
+
+a.btn:hover {
+  border-color: var(--gold);
+}
+
 input,
 select,
 textarea {
@@ -980,6 +998,9 @@ label {
 }
 
 .bar-track {
+  /* Blockified anyway as a grid child, but stated so the track still has a height if it
+     is ever used outside `.bar-row`. */
+  display: block;
   background: var(--paper-sunk);
   border-radius: 20px;
   height: 11px;
@@ -987,7 +1008,16 @@ label {
   border: 1px solid var(--rule);
 }
 
+/*
+ * `display: block` is load-bearing, not tidiness.
+ *
+ * This is a `<span>`, and an inline box ignores both width and height — so without it
+ * every bar rendered as an empty track and the whole chart silently showed nothing while
+ * the figures beside it were correct. The track escaped the same fate only by being a
+ * grid child, which blockifies it.
+ */
 .bar-fill {
+  display: block;
   height: 100%;
   background: var(--brand);
   border-radius: 20px;

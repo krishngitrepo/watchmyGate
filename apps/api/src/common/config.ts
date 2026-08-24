@@ -80,7 +80,7 @@ const schema = z.object({
   CORS_ORIGINS: z
     .string()
     .default(
-      "http://localhost:3000,http://127.0.0.1:3000,tauri://localhost,http://tauri.localhost",
+      "http://localhost:3000,http://127.0.0.1:3000,app://wmg",
     )
     .transform((v) =>
       v

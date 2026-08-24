@@ -1,0 +1,38 @@
+appId: in.watchmygate.desktop
+productName: WatchMyGate
+copyright: WatchMyGate
+
+directories:
+  output: dist
+  buildResources: build
+
+# Only the shell's own files. The console is added below as a resource rather than being
+# swept in from `files`, so the packaged app cannot accidentally ship the whole
+# `apps/web-admin` source tree alongside it.
+files:
+  - main.cjs
+  - preload.cjs
+  - package.json
+
+extraResources:
+  - from: ../web-admin/out
+    to: console
+
+win:
+  target: nsis
+  # Unsigned installers trigger a SmartScreen warning that will stop a committee member
+  # dead. A certificate is required before this is handed to a society — see README.
+  artifactName: ${productName}-${version}-setup.${ext}
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target: dmg
+  category: public.app-category.business
+
+linux:
+  target: AppImage
+  category: Office

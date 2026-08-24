@@ -1,9 +1,10 @@
 /**
  * Static export.
  *
- * `output: "export"` produces plain files in `out/`, which is what the Tauri desktop
- * shell packages — Tauri ships files, not a Node server. It also means the console
- * deploys to any static host for effectively nothing.
+ * `output: "export"` produces plain files in `out/`, which is what the Electron desktop
+ * shell packages — it serves those files over a custom protocol rather than running a
+ * Node server. It also means the console deploys to any static host for effectively
+ * nothing.
  *
  * The consequence to keep in mind: no server components fetching data, no API routes,
  * no middleware. Every page talks to the API from the browser. That is not a limitation
@@ -25,7 +26,7 @@
  *
  * Pointing the build at its own `distDir` looks like the fix and is not: with
  * `output: "export"` that setting relocates the *exported* files, so `out/` stops being
- * produced and the Tauri packaging step silently loses its input, while `.next` gets
+ * produced and the desktop packaging step silently loses its input, while `.next` gets
  * overwritten exactly as before. Measured, not assumed.
  *
  * @type {import('next').NextConfig}

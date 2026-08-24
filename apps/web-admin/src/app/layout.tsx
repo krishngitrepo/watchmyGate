@@ -8,9 +8,9 @@ import "./globals.css";
  * Fonts, self-hosted.
  *
  * The design links these from the Google Fonts CDN. That cannot ship: this console is
- * packaged by Tauri for the desktop build and Tauri's CSP blocks external hosts, so the
- * link would fail silently and the page would drop to a system sans — losing the entire
- * typographic identity on precisely the build handed to a society.
+ * packaged into the desktop build, whose CSP blocks external hosts, so the link would
+ * fail silently and the page would drop to a system sans — losing the entire typographic
+ * identity on precisely the build handed to a society.
  *
  * `next/font/google` fetches both families at build time and serves them from our own
  * origin. Same typefaces, no runtime dependency on anyone else, and no layout shift.

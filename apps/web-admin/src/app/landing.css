@@ -45,7 +45,15 @@
   box-sizing: border-box;
 }
 
-.lp a {
+/*
+ * Links, but not buttons.
+ *
+ * `:not(.lp-btn)` is doing real work here. Without it this rule is specificity (0,1,1)
+ * and every `.lp-btn-*` colour is (0,1,0), so a maroon-filled button rendered maroon
+ * text on a maroon fill and its label vanished. Every button on this page is an anchor,
+ * so all four were affected — the two primary ones invisibly.
+ */
+.lp a:not(.lp-btn) {
   color: var(--lp-maroon);
   text-decoration: none;
 }
@@ -138,6 +146,7 @@
 
 .lp-btn {
   display: inline-block;
+  text-decoration: none;
   font-weight: 700;
   font-size: 15px;
   padding: 11px 20px;

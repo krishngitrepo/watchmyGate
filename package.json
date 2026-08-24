@@ -24,8 +24,8 @@
     "api:dev": "npm run dev -w @watchmygate/api",
     "admin:dev": "npm run dev -w @watchmygate/web-admin",
     "admin:build": "npm run build -w @watchmygate/web-admin",
-    "desktop:dev": "cd apps/desktop && npm run tauri dev",
-    "desktop:build": "cd apps/desktop && npm run tauri build",
+    "desktop:dev": "npm run dev --prefix apps/desktop",
+    "desktop:build": "npm run build --prefix apps/desktop",
     "worker:dev": "npm run dev -w @watchmygate/worker",
     "e2e:phase2": "node --env-file-if-exists=.env scripts/phase2-smoke.mjs",
     "e2e:console": "node --env-file-if-exists=.env scripts/console-smoke.mjs"

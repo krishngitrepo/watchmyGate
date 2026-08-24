@@ -10,6 +10,13 @@ import { closeDatabase, initDatabase } from "@watchmygate/db";
 import { AppModule } from "./app.module.js";
 import { loadConfig } from "./common/config.js";
 import { AppExceptionFilter } from "./common/exception.filter.js";
+import { loadRepoEnv } from "./common/repo-root.js";
+
+// Must run before `loadConfig`, which reads `process.env` at module scope. `nest start`
+// runs with `apps/api` as its working directory, so the root `.env` is not found unless
+// it is located by walking up — the worker points `--env-file` at it from its npm script
+// instead, which the Nest CLI gives us no way to do.
+loadRepoEnv();
 
 const config = loadConfig();
 
@@ -61,7 +68,7 @@ async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { logger: false, rawBody: true });
 
   /**
-   * CORS for the admin console and the Tauri desktop shell.
+   * CORS for the admin console and the desktop shell.
    *
    * Both are separate origins from the API, so without this every browser call fails
    * on the preflight — and the console shows an empty page with a console error most
@@ -71,8 +78,10 @@ async function bootstrap(): Promise<void> {
    * presented means any website a committee member visits can call this API with their
    * session; the credentials mode below is exactly what makes that dangerous.
    *
-   * `tauri://localhost` and `http://tauri.localhost` are the desktop shell's origins on
-   * macOS/Linux and Windows respectively.
+   * `app://wmg` is the desktop shell's origin. The Electron window deliberately does
+   * not load from `file://`, which would present `Origin: null` — an origin this
+   * allowlist must never accept, since any local HTML file would then be able to call
+   * this API with a committee member's session.
    */
   app.enableCors({
     origin: config.CORS_ORIGINS,
