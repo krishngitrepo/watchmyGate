@@ -75,6 +75,16 @@ Verdict verdictFor(Object? result) {
       PassRejection.unsupportedVersion =>
         const Verdict(tone: VerdictTone.refuse, headlineKey: 'malformed'),
 
+      // A forwarded screenshot. Deliberately **refuse, not alarm**: people screenshot
+      // their own passes constantly and hosts forward them to their own drivers, so
+      // treating every one as an intrusion attempt would flood the committee with false
+      // alarms and teach guards to ignore the real ones. The guard just asks for the
+      // live pass.
+      PassRejection.staleProof =>
+        const Verdict(tone: VerdictTone.refuse, headlineKey: 'showLivePass'),
+      PassRejection.missingProof =>
+        const Verdict(tone: VerdictTone.refuse, headlineKey: 'showLivePass'),
+
       // Someone is trying it on.
       PassRejection.badSignature =>
         const Verdict(tone: VerdictTone.alarm, headlineKey: 'notGenuine'),

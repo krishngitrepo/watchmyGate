@@ -23,6 +23,29 @@
 /// **It never reveals who is visiting.** The QR carries a salted hash, not a name or a
 /// phone number, because a pass gets photographed and forwarded on WhatsApp. Visitor
 /// details are fetched separately when the device has signal.
+///
+/// ## v2 — the screenshot hole
+///
+/// v1 is cryptographically sound and completely defeated by a photograph: the bytes
+/// being verified are exactly the bytes in the picture. A guest screenshots their pass,
+/// forwards it, and whoever holds the image opens the gate.
+///
+/// v2 adds a holder key. The resident's app owns an Ed25519 keypair and the **society**
+/// signs its public half into the pass, so this device can trust it with no lookup. The
+/// displayed QR then carries a proof over the current 30-second window:
+///
+///     <body>.<societySig>.<counter>.<holderSig>
+///
+/// A forwarded screenshot therefore stops working within about a minute.
+///
+/// ### The clock, which this app already distrusts
+///
+/// Every gate event here records device time, server time and the drift between them,
+/// precisely because these handsets are cheap and shared and their clocks are wrong.
+/// Rolling verification needs a clock, so it takes the drift correction the sync engine
+/// already computes. A device that has never synced cannot do it at all and reports
+/// `screenshotProof: false` rather than pretending — an honest downgrade beats a silent
+/// one.
 library;
 
 import 'dart:convert';
@@ -32,6 +55,21 @@ import 'package:cryptography/cryptography.dart';
 
 /// Frozen. Any change to the canonical layout must bump this.
 const String passVersion = 'v1';
+
+/// Passes carrying a holder key and a rolling proof.
+const String passVersionRolling = 'v2';
+
+/// How long a displayed proof is good for, with one step of slack either side.
+///
+/// Roughly ninety seconds of combined clock error and fumbling at a barrier in the rain.
+/// Shorter starts rejecting real visitors; longer gives a forwarded screenshot a usable
+/// life.
+const int rollingStepSeconds = 30;
+const int rollingToleranceSteps = 1;
+
+/// The window a proof belongs to.
+int rollingCounter(DateTime at) =>
+    at.toUtc().millisecondsSinceEpoch ~/ 1000 ~/ rollingStepSeconds;
 
 /// Why a pass was refused.
 ///
@@ -46,6 +84,14 @@ enum PassRejection {
   notYetValid,
   expired,
   wrongSociety,
+
+  /// The proof is stale — almost always a forwarded screenshot rather than a clock
+  /// problem, so the guard is told to ask for the live pass rather than to rescan.
+  staleProof,
+
+  /// A v2 pass shown without a proof at all. Must not degrade to a v1-style accept,
+  /// which would make the whole mechanism opt-out for an attacker.
+  missingProof,
 }
 
 class PassException implements Exception {
@@ -68,6 +114,8 @@ class PassPayload {
     required this.maxUses,
     required this.visitorHash,
     required this.keyVersion,
+    this.holderPublicKey,
+    this.screenshotProof = false,
   });
 
   final String passId;
@@ -78,6 +126,16 @@ class PassPayload {
   final int maxUses;
   final String visitorHash;
   final int keyVersion;
+
+  /// The resident device's public key, base64url raw. Null on v1 passes.
+  final String? holderPublicKey;
+
+  /// True only when a live holder proof was actually checked.
+  ///
+  /// A v1 pass verifies perfectly and is **not** screenshot-proof. Surfacing the
+  /// difference lets the entry screen show it, and lets a society see how much of its
+  /// estate is still on the weak format.
+  final bool screenshotProof;
 }
 
 /// base64url without padding, matching Node's `base64url` encoding.
@@ -110,9 +168,10 @@ Future<PassPayload> verifyPass(
   Map<int, String> publicKeys, {
   DateTime? now,
   String? expectedSocietyId,
+  bool clockUntrusted = false,
 }) async {
-  final dot = qrValue.indexOf('.');
-  if (dot <= 0 || dot == qrValue.length - 1) {
+  final segments = qrValue.split('.');
+  if (segments.length < 2 || segments[0].isEmpty || segments[1].isEmpty) {
     throw const PassException(
       PassRejection.malformed,
       'This QR code is not an entry pass.',
@@ -122,8 +181,8 @@ Future<PassPayload> verifyPass(
   final Uint8List body;
   final Uint8List signature;
   try {
-    body = decodeB64Url(qrValue.substring(0, dot));
-    signature = decodeB64Url(qrValue.substring(dot + 1));
+    body = decodeB64Url(segments[0]);
+    signature = decodeB64Url(segments[1]);
   } on FormatException {
     throw const PassException(
       PassRejection.malformed,
@@ -132,16 +191,21 @@ Future<PassPayload> verifyPass(
   }
 
   final parts = utf8.decode(body, allowMalformed: true).split('|');
-  if (parts.length != 9) {
+  final rolling = parts.isNotEmpty && parts[0] == passVersionRolling;
+
+  if (parts.isEmpty ||
+      (parts[0] != passVersion && !rolling) ||
+      (!rolling && parts.length != 9) ||
+      (rolling && parts.length != 10)) {
+    if (parts.isNotEmpty && parts[0] != passVersion && !rolling) {
+      throw const PassException(
+        PassRejection.unsupportedVersion,
+        'This pass was issued by a newer app. Update this device.',
+      );
+    }
     throw const PassException(
       PassRejection.malformed,
       'This QR code is not an entry pass.',
-    );
-  }
-  if (parts[0] != passVersion) {
-    throw const PassException(
-      PassRejection.unsupportedVersion,
-      'This pass was issued by a newer app. Update this device.',
     );
   }
 
@@ -173,6 +237,57 @@ Future<PassPayload> verifyPass(
     );
   }
 
+  // The society signed the holder's public key into the body above, so it is trusted
+  // without a lookup — which is exactly what keeps this working with no network.
+  final holderPublicKey = rolling ? parts[9] : null;
+  var screenshotProof = false;
+
+  if (rolling && !clockUntrusted) {
+    if (segments.length < 4 || segments[2].isEmpty || segments[3].isEmpty) {
+      throw const PassException(
+        PassRejection.missingProof,
+        'Ask the visitor to show the pass in their app, not a screenshot.',
+      );
+    }
+
+    final presented = int.tryParse(segments[2]);
+    if (presented == null) {
+      throw const PassException(
+        PassRejection.malformed,
+        'This QR code is not an entry pass.',
+      );
+    }
+
+    final expected = rollingCounter(now ?? DateTime.now().toUtc());
+    if ((presented - expected).abs() > rollingToleranceSteps) {
+      // The commonest cause by far is a forwarded screenshot, so the message says so.
+      // A guard reading "expired" would just try rescanning the same picture.
+      throw const PassException(
+        PassRejection.staleProof,
+        'This code has expired. Ask for the live pass in their app.',
+      );
+    }
+
+    final proofOk = await algorithm.verify(
+      utf8.encode('${parts[1]}|$presented'),
+      signature: Signature(
+        decodeB64Url(segments[3]),
+        publicKey: SimplePublicKey(
+          decodeB64Url(holderPublicKey!),
+          type: KeyPairType.ed25519,
+        ),
+      ),
+    );
+    if (!proofOk) {
+      throw const PassException(
+        PassRejection.badSignature,
+        'This entry pass is not genuine.',
+      );
+    }
+
+    screenshotProof = true;
+  }
+
   final payload = PassPayload(
     passId: parts[1],
     societyId: parts[2],
@@ -188,6 +303,8 @@ Future<PassPayload> verifyPass(
     maxUses: int.parse(parts[6]),
     visitorHash: parts[7],
     keyVersion: keyVersion!,
+    holderPublicKey: holderPublicKey,
+    screenshotProof: screenshotProof,
   );
 
   // Signature first, window second. A forged pass with a valid-looking window must fail

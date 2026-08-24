@@ -91,6 +91,57 @@
       "verifyAtEpochMs": 1786795200000,
       "expect": "badSignature",
       "payload": null
+    },
+    {
+      "name": "v2 shown live from the app",
+      "qr": "djJ8MDE5OGYyYzEtNmEzZC03YzIxLTlmMTAtMmI3YTVjNGU4ZDkwfDhjOGJhYmQ0LTRkZTUtNDVjZC1iZDE3LWVhNjZmN2ExMTc2YnwzZjI1MDRlMC00Zjg5LTExZDMtOWEwYy0wMzA1ZTgyYzMzMDF8MTc4Njc5MTYwMHwxNzg2Nzk4ODAwfDF8a1E3WngxblIydkI0bUo4cHwzfHM4MVBXeDduUERpWldLUG1aLTRPVWE4dWNMRmV3bW42aDJTdXNuMURFcVU.NJ1KlI-7VgGTVADl43mEHi3dwZ5TiAM5hRlirVhs_kWCCNgnxl0KzDGZmOV8QVRS0RpH_sQ2jIXh5wqXLKAACw.59559840.Tn8o9LAscioxf-UX4GX-1KA89PSQXdYlGF_XQik1oAxqJ0z04JUN9hi3nmd9CvLHI8D8MYioY3Vx7aMTuJX_Aw",
+      "verifyAtEpochMs": 1786795200000,
+      "expect": "valid",
+      "screenshotProof": true,
+      "payload": {
+        "passId": "0198f2c1-6a3d-7c21-9f10-2b7a5c4e8d90",
+        "societyId": "8c8babd4-4de5-45cd-bd17-ea66f7a1176b",
+        "unitId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "validFrom": 1786791600,
+        "validTo": 1786798800,
+        "maxUses": 1,
+        "visitorHash": "kQ7Zx1nR2vB4mJ8p",
+        "keyVersion": 3,
+        "holderPublicKey": "s81PWx7nPDiZWKPmZ-4OUa8ucLFewmn6h2Susn1DEqU"
+      }
+    },
+    {
+      "name": "v2 screenshot forwarded two minutes later",
+      "qr": "djJ8MDE5OGYyYzEtNmEzZC03YzIxLTlmMTAtMmI3YTVjNGU4ZDkwfDhjOGJhYmQ0LTRkZTUtNDVjZC1iZDE3LWVhNjZmN2ExMTc2YnwzZjI1MDRlMC00Zjg5LTExZDMtOWEwYy0wMzA1ZTgyYzMzMDF8MTc4Njc5MTYwMHwxNzg2Nzk4ODAwfDF8a1E3WngxblIydkI0bUo4cHwzfHM4MVBXeDduUERpWldLUG1aLTRPVWE4dWNMRmV3bW42aDJTdXNuMURFcVU.NJ1KlI-7VgGTVADl43mEHi3dwZ5TiAM5hRlirVhs_kWCCNgnxl0KzDGZmOV8QVRS0RpH_sQ2jIXh5wqXLKAACw.59559840.Tn8o9LAscioxf-UX4GX-1KA89PSQXdYlGF_XQik1oAxqJ0z04JUN9hi3nmd9CvLHI8D8MYioY3Vx7aMTuJX_Aw",
+      "verifyAtEpochMs": 1786795320000,
+      "expect": "staleProof",
+      "payload": null
+    },
+    {
+      "name": "v2 within one step of clock error",
+      "qr": "djJ8MDE5OGYyYzEtNmEzZC03YzIxLTlmMTAtMmI3YTVjNGU4ZDkwfDhjOGJhYmQ0LTRkZTUtNDVjZC1iZDE3LWVhNjZmN2ExMTc2YnwzZjI1MDRlMC00Zjg5LTExZDMtOWEwYy0wMzA1ZTgyYzMzMDF8MTc4Njc5MTYwMHwxNzg2Nzk4ODAwfDF8a1E3WngxblIydkI0bUo4cHwzfHM4MVBXeDduUERpWldLUG1aLTRPVWE4dWNMRmV3bW42aDJTdXNuMURFcVU.NJ1KlI-7VgGTVADl43mEHi3dwZ5TiAM5hRlirVhs_kWCCNgnxl0KzDGZmOV8QVRS0RpH_sQ2jIXh5wqXLKAACw.59559839.2FHowQpLT9QAcGMJgZGaIzdP4WYxSF8v2l0uKxXFcPxaxtyuSAbuxXs8e2NAXDDHbYZigsxR5jdYVuigAJjnDg",
+      "verifyAtEpochMs": 1786795200000,
+      "expect": "valid",
+      "screenshotProof": true,
+      "payload": {
+        "passId": "0198f2c1-6a3d-7c21-9f10-2b7a5c4e8d90",
+        "societyId": "8c8babd4-4de5-45cd-bd17-ea66f7a1176b",
+        "unitId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+        "validFrom": 1786791600,
+        "validTo": 1786798800,
+        "maxUses": 1,
+        "visitorHash": "kQ7Zx1nR2vB4mJ8p",
+        "keyVersion": 3,
+        "holderPublicKey": "s81PWx7nPDiZWKPmZ-4OUa8ucLFewmn6h2Susn1DEqU"
+      }
+    },
+    {
+      "name": "v2 stripped of its proof",
+      "qr": "djJ8MDE5OGYyYzEtNmEzZC03YzIxLTlmMTAtMmI3YTVjNGU4ZDkwfDhjOGJhYmQ0LTRkZTUtNDVjZC1iZDE3LWVhNjZmN2ExMTc2YnwzZjI1MDRlMC00Zjg5LTExZDMtOWEwYy0wMzA1ZTgyYzMzMDF8MTc4Njc5MTYwMHwxNzg2Nzk4ODAwfDF8a1E3WngxblIydkI0bUo4cHwzfHM4MVBXeDduUERpWldLUG1aLTRPVWE4dWNMRmV3bW42aDJTdXNuMURFcVU.NJ1KlI-7VgGTVADl43mEHi3dwZ5TiAM5hRlirVhs_kWCCNgnxl0KzDGZmOV8QVRS0RpH_sQ2jIXh5wqXLKAACw",
+      "verifyAtEpochMs": 1786795200000,
+      "expect": "missingProof",
+      "payload": null
     }
-  ]
+  ],
+  "holderPublicKey": "s81PWx7nPDiZWKPmZ-4OUa8ucLFewmn6h2Susn1DEqU"
 }

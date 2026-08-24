@@ -247,7 +247,14 @@ export class GateService {
     validFrom: Date;
     validTo: Date;
     maxUses?: number | undefined;
-  }): Promise<{ passId: string; qrValue: string; validFrom: Date; validTo: Date }> {
+    holderPublicKey?: string | undefined;
+  }): Promise<{
+    passId: string;
+    qrValue: string;
+    validFrom: Date;
+    validTo: Date;
+    screenshotProof: boolean;
+  }> {
     const { societyId, personId } = currentContext();
 
     if (input.validTo <= input.validFrom) {
@@ -290,6 +297,10 @@ export class GateService {
         maxUses: input.maxUses ?? 1,
         visitorHash: hash,
         keyVersion,
+        // Present only when the resident's device registered a key. Its absence issues a
+        // v1 pass, which still works everywhere and is not screenshot-proof — societies
+        // have handsets and apps that predate v2, and refusing them would break the gate.
+        ...(input.holderPublicKey ? { holderPublicKey: input.holderPublicKey } : {}),
       };
       const qrValue = signPass(payload, privatePem);
 
@@ -298,7 +309,16 @@ export class GateService {
         .set({ qrValue })
         .where(eq(schema.visitorPasses.id, passId));
 
-      return { passId, qrValue, validFrom: input.validFrom, validTo: input.validTo };
+      return {
+        passId,
+        qrValue,
+        validFrom: input.validFrom,
+        validTo: input.validTo,
+        // Told to the caller so a resident app can say plainly whether this pass is safe
+        // to forward. A society should be able to see how much of its estate is still on
+        // the format a photograph defeats.
+        screenshotProof: Boolean(input.holderPublicKey),
+      };
     });
   }
 

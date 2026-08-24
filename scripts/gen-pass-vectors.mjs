@@ -181,6 +181,104 @@ vectors.cases.push({
   payload: null,
 });
 
+// ---------------------------------------------------------------- v2 vectors
+//
+// The rolling-proof format. These matter more than the v1 cases now, because v2 is the
+// only format that survives a screenshot and a Dart/TypeScript divergence here would
+// mean either admitting forwarded images or rejecting every genuine visitor.
+//
+// A second fixed keypair stands in for the resident's device.
+const HOLDER_PEM = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VwBCIEIL9pF3vQ0m5xK1kY2r8wZ3cH4nJ6tS8dV0aB2cE4fG6h
+-----END PRIVATE KEY-----
+`;
+
+const holderPublic = rawPublic(HOLDER_PEM);
+const ROLLING_STEP_SECONDS = 30;
+
+function canonicalV2(p) {
+  return Buffer.from(
+    [
+      "v2",
+      p.passId,
+      p.societyId,
+      p.unitId,
+      String(Math.floor(p.validFrom / 1000)),
+      String(Math.floor(p.validTo / 1000)),
+      String(p.maxUses),
+      p.visitorHash,
+      String(p.keyVersion),
+      holderPublic,
+    ].join("|"),
+    "utf8",
+  );
+}
+
+/** The full string a resident's screen shows during one 30-second window. */
+function signRolling(payload, atEpochMs) {
+  const body = canonicalV2(payload);
+  const societySig = edSign(null, body, createPrivateKey(PRIVATE_PEM));
+  const counter = Math.floor(atEpochMs / 1000 / ROLLING_STEP_SECONDS);
+  const proof = edSign(
+    null,
+    Buffer.from(`${payload.passId}|${counter}`, "utf8"),
+    createPrivateKey(HOLDER_PEM),
+  );
+
+  return (
+    `${body.toString("base64url")}.${societySig.toString("base64url")}` +
+    `.${counter}.${proof.toString("base64url")}`
+  );
+}
+
+const v2Payload = { ...cases[0].payload, holderPublicKey: holderPublic };
+
+vectors.holderPublicKey = holderPublic;
+
+vectors.cases.push({
+  name: "v2 shown live from the app",
+  qr: signRolling(v2Payload, T),
+  verifyAtEpochMs: T,
+  expect: "valid",
+  screenshotProof: true,
+  payload: {
+    ...v2Payload,
+    validFrom: Math.floor(v2Payload.validFrom / 1000),
+    validTo: Math.floor(v2Payload.validTo / 1000),
+  },
+});
+
+vectors.cases.push({
+  name: "v2 screenshot forwarded two minutes later",
+  // Identical bytes to a genuine scan. Only the passage of time defeats it, which is
+  // exactly the property being claimed.
+  qr: signRolling(v2Payload, T),
+  verifyAtEpochMs: T + 120_000,
+  expect: "staleProof",
+  payload: null,
+});
+
+vectors.cases.push({
+  name: "v2 within one step of clock error",
+  qr: signRolling(v2Payload, T - ROLLING_STEP_SECONDS * 1000),
+  verifyAtEpochMs: T,
+  expect: "valid",
+  screenshotProof: true,
+  payload: {
+    ...v2Payload,
+    validFrom: Math.floor(v2Payload.validFrom / 1000),
+    validTo: Math.floor(v2Payload.validTo / 1000),
+  },
+});
+
+vectors.cases.push({
+  name: "v2 stripped of its proof",
+  qr: signRolling(v2Payload, T).split(".").slice(0, 2).join("."),
+  verifyAtEpochMs: T,
+  expect: "missingProof",
+  payload: null,
+});
+
 const out = "packages/money/pass-vectors.json";
 writeFileSync(out, `${JSON.stringify(vectors, null, 2)}\n`, "utf8");
 console.log(`${vectors.cases.length} vectors written to ${out}`);

@@ -19,6 +19,42 @@
  *
  * Field order and separator are frozen — the Dart verifier reconstructs this exact
  * string, so any change is breaking and must bump PASS_VERSION.
+ *
+ * ---
+ *
+ * ## v2: the screenshot problem
+ *
+ * v1 has a hole, and it is ours rather than inherited: **a photograph of the QR works.**
+ * A guest screenshots their pass, forwards it on WhatsApp, and whoever holds that image
+ * opens the gate for as long as the pass is valid. Everything about v1 is
+ * cryptographically sound and none of it helps, because the bytes being verified are
+ * exactly the bytes in the picture.
+ *
+ * v2 adds a **holder key**. The resident's app generates an Ed25519 keypair, registers
+ * the public half, and the server signs that public key *into* the pass. The displayed
+ * QR then carries a short-lived proof:
+ *
+ *     v2|passId|societyId|unitId|validFrom|validTo|maxUses|visitorHash|keyVersion|holderPub
+ *     …then `.societySig.counter.holderSig`
+ *
+ * `counter` is the 30-second window number and `holderSig` is the holder's signature
+ * over `passId|counter`. A screenshot therefore contains a proof that is worthless
+ * within about a minute.
+ *
+ * The property that makes this work at a gate with no signal: because the *society*
+ * signed the holder's public key, the guard needs no lookup to trust it. One
+ * verification chain, entirely offline.
+ *
+ * ### The clock problem, stated honestly
+ *
+ * This depends on time, and this product's stated position is that **a guard handset's
+ * clock is not trusted** — that is why every gate event records device time, server time
+ * and the drift between them. A device hours out of true would reject every valid pass.
+ *
+ * So the verifier takes a `driftSeconds` correction, which the guard app already
+ * computes at sync. A device that has never synced cannot do rolling verification at
+ * all; it falls back to v1 static checking and says so, rather than silently accepting a
+ * screenshot while appearing to be protected.
  */
 
 import {
@@ -34,11 +70,23 @@ import {
 import { ValidationError } from "../../common/errors.js";
 
 export const PASS_VERSION = "v1";
+export const PASS_VERSION_ROLLING = "v2";
 
 /** Rotation cadence. Guards cache this many versions so a pass signed just before a
  * rotation still verifies on a device that has not synced. */
 export const KEY_ROTATION_DAYS = 7;
 export const KEY_CACHE_DEPTH = 3;
+
+/**
+ * How long a displayed proof is good for.
+ *
+ * Thirty seconds, with one step of tolerance either side, so a genuine pass survives
+ * roughly a minute and a half of combined clock error and a guard fumbling the scan.
+ * Shorter would start rejecting real visitors at a barrier in the rain; longer would
+ * give a forwarded screenshot a usable life.
+ */
+export const ROLLING_STEP_SECONDS = 30;
+export const ROLLING_TOLERANCE_STEPS = 1;
 
 export interface PassPayload {
   passId: string;
@@ -49,23 +97,65 @@ export interface PassPayload {
   maxUses: number;
   visitorHash: string;
   keyVersion: number;
+  /** Present only on v2. The resident device's Ed25519 public key, base64url raw. */
+  holderPublicKey?: string;
+}
+
+/** What the guard learns beyond "is this genuine". */
+export interface VerifiedPass extends PassPayload {
+  /**
+   * True only when a live holder proof was checked.
+   *
+   * A v1 pass verifies perfectly and is **not** screenshot-proof. Saying so lets the
+   * guard app show the difference, and lets a society see how much of its estate is
+   * still on the weak format.
+   */
+  screenshotProof: boolean;
 }
 
 function canonical(p: PassPayload): Buffer {
-  return Buffer.from(
-    [
-      PASS_VERSION,
-      p.passId,
-      p.societyId,
-      p.unitId,
-      String(Math.floor(p.validFrom.getTime() / 1000)),
-      String(Math.floor(p.validTo.getTime() / 1000)),
-      String(p.maxUses),
-      p.visitorHash,
-      String(p.keyVersion),
-    ].join("|"),
-    "utf8",
-  );
+  const rolling = p.holderPublicKey !== undefined && p.holderPublicKey !== "";
+
+  const fields = [
+    rolling ? PASS_VERSION_ROLLING : PASS_VERSION,
+    p.passId,
+    p.societyId,
+    p.unitId,
+    String(Math.floor(p.validFrom.getTime() / 1000)),
+    String(Math.floor(p.validTo.getTime() / 1000)),
+    String(p.maxUses),
+    p.visitorHash,
+    String(p.keyVersion),
+  ];
+  if (rolling) fields.push(p.holderPublicKey!);
+
+  return Buffer.from(fields.join("|"), "utf8");
+}
+
+/** The 30-second window a proof belongs to. */
+export function rollingCounter(nowSeconds: number = Date.now() / 1000): number {
+  return Math.floor(nowSeconds / ROLLING_STEP_SECONDS);
+}
+
+/**
+ * What the resident's device signs, once per window.
+ *
+ * Deliberately just the pass id and the counter. Signing more would leak more into a
+ * value that is displayed as a QR many times a day, and nothing else is needed: the
+ * static half of the pass is already covered by the society's signature.
+ */
+export function rollingProofBody(passId: string, counter: number): Buffer {
+  return Buffer.from(`${passId}|${counter}`, "utf8");
+}
+
+/** Reference implementation of what the resident app does. Mirrored in Dart. */
+export function signRollingProof(
+  passId: string,
+  counter: number,
+  holderPrivatePem: string,
+): string {
+  const key = createPrivateKey(holderPrivatePem);
+  return edSign(null, rollingProofBody(passId, counter), key).toString("base64url");
 }
 
 /**
@@ -127,8 +217,19 @@ export function signPass(payload: PassPayload, privatePem: string): string {
 export function verifyPass(
   qrValue: string,
   publicKeys: Record<number, string>,
-): PassPayload {
-  const [encodedBody, encodedSig] = qrValue.split(".");
+  options: {
+    /** Seconds since epoch, already corrected for this device's known drift. */
+    nowSeconds?: number;
+    /**
+     * True when the device has never synced and therefore has no trustworthy clock.
+     * Rolling proofs are skipped and the result says `screenshotProof: false` — an
+     * honest downgrade rather than a silent one.
+     */
+    clockUntrusted?: boolean;
+  } = {},
+): VerifiedPass {
+  const segments = qrValue.split(".");
+  const [encodedBody, encodedSig] = segments;
   if (!encodedBody || !encodedSig) {
     throw new ValidationError("This QR code is not a valid entry pass.");
   }
@@ -137,7 +238,14 @@ export function verifyPass(
   const signature = Buffer.from(encodedSig, "base64url");
   const parts = body.toString("utf8").split("|");
 
-  if (parts.length !== 9 || parts[0] !== PASS_VERSION) {
+  const version = parts[0];
+  const rolling = version === PASS_VERSION_ROLLING;
+
+  if (
+    (version !== PASS_VERSION && !rolling) ||
+    (version === PASS_VERSION && parts.length !== 9) ||
+    (rolling && parts.length !== 10)
+  ) {
     throw new ValidationError("This entry pass is in an unsupported format.");
   }
 
@@ -162,7 +270,7 @@ export function verifyPass(
     throw new ValidationError("This entry pass is not genuine.");
   }
 
-  return {
+  const payload: PassPayload = {
     passId: parts[1]!,
     societyId: parts[2]!,
     unitId: parts[3]!,
@@ -171,7 +279,61 @@ export function verifyPass(
     maxUses: Number(parts[6]),
     visitorHash: parts[7]!,
     keyVersion,
+    ...(rolling ? { holderPublicKey: parts[9]! } : {}),
   };
+
+  // A v1 pass is genuine and reproducible from a photograph. Nothing more to check.
+  if (!rolling) return { ...payload, screenshotProof: false };
+
+  // The society signed the holder's public key into the body above, so it is trusted
+  // without a lookup — which is what keeps this working with no network.
+  if (options.clockUntrusted) {
+    return { ...payload, screenshotProof: false };
+  }
+
+  const [, , encodedCounter, encodedProof] = segments;
+  if (!encodedCounter || !encodedProof) {
+    throw new ValidationError(
+      "This pass needs to be shown from the resident's app, not from a screenshot.",
+    );
+  }
+
+  const presented = Number(encodedCounter);
+  if (!Number.isInteger(presented)) {
+    throw new ValidationError("This entry pass is in an unsupported format.");
+  }
+
+  const expected = rollingCounter(options.nowSeconds ?? Date.now() / 1000);
+  if (Math.abs(presented - expected) > ROLLING_TOLERANCE_STEPS) {
+    // The commonest cause by far is a forwarded screenshot, so the message names it —
+    // a guard reading "expired" would try rescanning the same picture.
+    throw new ValidationError(
+      "This code has expired. Ask the visitor to show the live pass in their app.",
+    );
+  }
+
+  const holderRaw = Buffer.from(payload.holderPublicKey!, "base64url");
+  const holderSpki = Buffer.concat([
+    Buffer.from("302a300506032b6570032100", "hex"),
+    holderRaw,
+  ]);
+  const holderKey = createPublicKey({
+    key: holderSpki,
+    format: "der",
+    type: "spki",
+  });
+
+  const proofOk = edVerify(
+    null,
+    rollingProofBody(payload.passId, presented),
+    holderKey,
+    Buffer.from(encodedProof, "base64url"),
+  );
+  if (!proofOk) {
+    throw new ValidationError("This entry pass is not genuine.");
+  }
+
+  return { ...payload, screenshotProof: true };
 }
 
 /**

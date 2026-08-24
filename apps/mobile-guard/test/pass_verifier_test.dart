@@ -60,6 +60,14 @@ void main() {
             payload.validTo.millisecondsSinceEpoch ~/ 1000,
             want['validTo'],
           );
+
+          // A v2 vector claims screenshot protection. Verifying the signature but
+          // reporting the pass as unprotected would leave the guard app unable to tell
+          // a live pass from a photograph — which is the entire point of v2.
+          if (c.containsKey('screenshotProof')) {
+            expect(payload.screenshotProof, c['screenshotProof']);
+            expect(payload.holderPublicKey, isNotNull);
+          }
           return;
         }
 

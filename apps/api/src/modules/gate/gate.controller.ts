@@ -51,6 +51,15 @@ const issuePassSchema = z.object({
   validFrom: z.coerce.date(),
   validTo: z.coerce.date(),
   maxUses: z.number().int().min(1).max(100).optional(),
+  /**
+   * The resident device's Ed25519 public key, base64url raw, 32 bytes.
+   *
+   * Supplying it issues a v2 pass whose displayed QR carries a 30-second proof, so a
+   * forwarded screenshot stops working. Omitting it issues v1, which is genuine and
+   * reproducible from a photograph — the honest default for a device that has not
+   * enrolled rather than a silent downgrade.
+   */
+  holderPublicKey: z.string().regex(/^[A-Za-z0-9_-]{43}$/).optional(),
 });
 
 const approvalRequestSchema = z.object({
