@@ -11,7 +11,7 @@
  * write path would defeat the point of having the role at all.
  */
 
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, Query } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -21,12 +21,14 @@ import { ForbiddenError, NotFoundError } from "../../common/errors.js";
 import { currentContext, hasRole, tx } from "../../common/tenant-context.js";
 import { LedgerService } from "./ledger.service.js";
 import { ReportsService } from "./reports.service.js";
+import { TallyService } from "./tally.service.js";
 
 @Controller("v1/ledger")
 export class LedgerController {
   constructor(
     private readonly ledger: LedgerService,
     private readonly reports: ReportsService,
+    private readonly tally: TallyService,
   ) {}
 
   @Get("accounts")
@@ -109,6 +111,42 @@ export class LedgerController {
     return this.reports.houseStatement(unitId, from, to);
   }
 
+  // ---------------------------------------------------------------- export
+
+  /**
+   * The books, as a file Tally will actually import.
+   *
+   * Restricted to the roles that can already read the books, and no narrower. An
+   * accountant who can see the trial balance on screen and cannot export it is being
+   * obstructed rather than controlled.
+   */
+  @Get("export/tally")
+  @Header("Content-Type", "application/xml; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="watchmygate-tally.xml"')
+  async exportTally(@Query("from") from: string, @Query("to") to: string) {
+    this.requireBooks();
+    const society = await tx(async (db) =>
+      db.select({ name: schema.societies.name }).from(schema.societies).limit(1),
+    );
+    return this.tally.exportXml(
+      society[0]?.name ?? "Society",
+      from ?? financialYearStart(),
+      to ?? new Date().toISOString().slice(0, 10),
+    );
+  }
+
+  /** The same books as CSV, for anyone not running Tally. */
+  @Get("export/csv")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="watchmygate-ledger.csv"')
+  async exportCsv(@Query("from") from: string, @Query("to") to: string) {
+    this.requireBooks();
+    return this.tally.exportCsv(
+      from ?? financialYearStart(),
+      to ?? new Date().toISOString().slice(0, 10),
+    );
+  }
+
   @Get("invariants")
   async invariants() {
     this.requireBooks();
@@ -188,4 +226,11 @@ export class LedgerController {
       throw new ForbiddenError("Only the accountant or a society admin can do that.");
     }
   }
+}
+
+/** 1 April of the financial year we are currently in. Statutory, so not configurable. */
+function financialYearStart(): string {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  return `${now.getUTCMonth() + 1 >= 4 ? year : year - 1}-04-01`;
 }

@@ -738,6 +738,39 @@ async function main() {
   );
 
 
+  // ------------------------------------------------------------- exports
+  console.log("");
+  console.log("--- Getting the books out again ---");
+
+  const tally = await call("GET", "/v1/ledger/export/tally?from=2020-01-01&to=2030-01-01");
+  check("tally export", ok(tally), why(tally));
+  check(
+    "it is a Tally import envelope",
+    typeof tally.body === "string" && tally.body.includes("<TALLYREQUEST>Import Data</TALLYREQUEST>"),
+    typeof tally.body,
+  );
+  // Tally rejects any date that is not YYYYMMDD, and it does so by importing zero
+  // vouchers rather than by failing — the worst possible way to be wrong.
+  check(
+    "voucher dates carry no separators",
+    typeof tally.body === "string" && /<DATE>\d{8}<\/DATE>/.test(tally.body),
+    "date format",
+  );
+  check(
+    "ledger masters travel with the vouchers",
+    typeof tally.body === "string" && tally.body.includes("<LEDGER NAME="),
+    "masters",
+  );
+
+  const csvOut = await call("GET", "/v1/ledger/export/csv?from=2020-01-01&to=2030-01-01");
+  check("csv export", ok(csvOut), why(csvOut));
+  check(
+    "csv has a header row",
+    typeof csvOut.body === "string" && csvOut.body.startsWith("Date,Voucher,Narration"),
+    "header",
+  );
+
+
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");
 

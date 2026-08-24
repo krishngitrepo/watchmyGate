@@ -14,7 +14,7 @@ import {
   Tabs,
   useAction,
 } from "../../components/Shell";
-import { api, can, rupees, shortDate } from "../../lib/api";
+import { api, can, download, rupees, shortDate } from "../../lib/api";
 
 interface Account {
   id: string;
@@ -167,6 +167,12 @@ export default function Books() {
     <Shell
       title="The Books"
       lede="Trial balance, income and expenditure, balance sheet — read off the journal, never off a stored total."
+      actions={
+        <>
+          <ExportButton kind="csv" from={from} to={asOf} label="Export CSV" />
+          <ExportButton kind="tally" from={from} to={asOf} label="Export to Tally" />
+        </>
+      }
     >
       {error ? <Problem error={error} /> : null}
 
@@ -807,4 +813,44 @@ function financialYearStart(date: string): string {
   const year = Number(date.slice(0, 4));
   const month = Number(date.slice(5, 7));
   return `${month >= 4 ? year : year - 1}-04-01`;
+}
+
+/**
+ * Export.
+ *
+ * Tally is not a nice-to-have. Almost every society in India has an accountant who has
+ * used it for twenty years, and "can I get this into Tally" is the first question a CA
+ * asks in a demo. Withholding it would be a lock-in tactic and a transparent one — it
+ * traps nobody and loses the deal in the room.
+ */
+function ExportButton({
+  kind,
+  from,
+  to,
+  label,
+}: {
+  kind: "tally" | "csv";
+  from: string;
+  to: string;
+  label: string;
+}) {
+  const action = useAction();
+  const extension = kind === "tally" ? "xml" : "csv";
+
+  return (
+    <button
+      disabled={action.busy}
+      title={action.error || undefined}
+      onClick={() =>
+        void action.run(() =>
+          download(
+            `/v1/ledger/export/${kind}?from=${from}&to=${to}`,
+            `watchmygate-${kind}-${from}-to-${to}.${extension}`,
+          ),
+        )
+      }
+    >
+      {action.busy ? "Preparing…" : label}
+    </button>
+  );
 }

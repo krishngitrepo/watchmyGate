@@ -29,6 +29,7 @@ import { HelpdeskService } from "./modules/helpdesk/helpdesk.service.js";
 import { LedgerController } from "./modules/ledger/ledger.controller.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { ReportsService } from "./modules/ledger/reports.service.js";
+import { TallyService } from "./modules/ledger/tally.service.js";
 import { PaymentsController } from "./modules/payments/payments.controller.js";
 import { PaymentsService } from "./modules/payments/payments.service.js";
 import { SocietyController } from "./modules/society/society.controller.js";
@@ -70,6 +71,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     TasksService,
     LedgerService,
     ReportsService,
+    TallyService,
     BillingService,
     HelpdeskService,
     GateService,

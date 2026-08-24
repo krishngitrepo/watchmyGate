@@ -169,6 +169,45 @@ export const api = {
     request<T>(path, { method: "DELETE", ...(body ? { body: JSON.stringify(body) } : {}) }),
 };
 
+/**
+ * Download a file the API generates, with the session token in a header.
+ *
+ * Deliberately not a plain `<a href>` with the token in the query string. That would be
+ * one line shorter and would put a live session token into browser history, the address
+ * bar, any proxy log between here and the API, and the `Referer` of whatever the user
+ * clicked next. A committee laptop is frequently a shared laptop.
+ *
+ * So the bytes are fetched with the Authorization header like every other request, and
+ * handed to the browser as a blob. The object URL is revoked immediately afterwards —
+ * an un-revoked one keeps the whole file in memory for the life of the tab.
+ */
+export async function download(path: string, filename: string): Promise<void> {
+  const response = await fetch(`${apiBase()}${path}`, {
+    headers: { ...(session.token() ? { Authorization: `Bearer ${session.token()}` } : {}) },
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    let message = `Export failed (${response.status})`;
+    try {
+      message = (JSON.parse(text) as { error?: { message?: string } }).error?.message ?? message;
+    } catch {
+      // A non-JSON error body is not worth a second failure mode.
+    }
+    throw new ApiError(message, response.status);
+  }
+
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 // ------------------------------------------------------------------ money
 
 /**
