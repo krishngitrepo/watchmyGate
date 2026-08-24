@@ -38,6 +38,7 @@ const SECTIONS: {
     pages: [
       { href: "/billing/", label: "Dues & Billing" },
       { href: "/payments/", label: "Payments" },
+      { href: "/books/", label: "The Books" },
     ],
   },
   {

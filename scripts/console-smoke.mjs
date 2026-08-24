@@ -682,6 +682,62 @@ async function main() {
   });
   check("import an opening balance", ok(balances), why(balances));
 
+  // ------------------------------------------------------------- the books
+  console.log("");
+  console.log("--- The Books ---");
+
+  const trial = await call("GET", "/v1/ledger/trial-balance");
+  check("trial balance", ok(trial), why(trial));
+  // The cheapest possible proof the books are internally consistent. If this is false,
+  // every statement downstream of it is wrong.
+  check("debits equal credits", trial.body?.balanced === true, why(trial));
+  check(
+    "trial balance figures are strings, never numbers",
+    typeof trial.body?.totalDebit === "string",
+    typeof trial.body?.totalDebit,
+  );
+
+  const sheet = await call("GET", "/v1/ledger/balance-sheet");
+  check("balance sheet", ok(sheet), why(sheet));
+  check("the balance sheet balances", sheet.body?.balanced === true, why(sheet));
+
+  const ie = await call("GET", "/v1/ledger/income-expenditure");
+  check("income and expenditure", ok(ie), why(ie));
+  // The surplus on the I&E has to be the figure the balance sheet folds into funds, or
+  // the two statements are describing different societies.
+  check(
+    "surplus agrees with the balance sheet",
+    ie.body?.surplus === sheet.body?.accumulatedSurplus,
+    `${ie.body?.surplus} vs ${sheet.body?.accumulatedSurplus}`,
+  );
+
+  check("cash and bank", ok(await call("GET", "/v1/ledger/cash-flow")), "cash-flow");
+  check("day book", ok(await call("GET", "/v1/ledger/day-book")), "day-book");
+  check("chart of accounts", ok(await call("GET", "/v1/ledger/accounts")), "accounts");
+  check("accounting periods", ok(await call("GET", "/v1/ledger/periods")), "periods");
+
+  const invariants = await call("GET", "/v1/ledger/invariants");
+  check("ledger invariants hold", invariants.body?.ok === true, why(invariants));
+
+  const chart = await call("GET", "/v1/ledger/accounts");
+  check(
+    "reports do not leak the driver envelope",
+    Array.isArray(chart.body),
+    why(chart),
+  );
+
+  const badDate = await call("GET", "/v1/ledger/trial-balance?asOf=not-a-date");
+  check("a malformed date is refused, not ignored", badDate.status === 422, why(badDate));
+
+  const statement = await call("GET", `/v1/ledger/house-statement?unitId=${unitId}`);
+  check("house statement", ok(statement), why(statement));
+  check(
+    "house statement carries a running balance",
+    statement.body?.closingBalance !== undefined,
+    why(statement),
+  );
+
+
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");
 
