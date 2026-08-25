@@ -68,6 +68,13 @@ const SECTIONS: {
     ],
   },
   {
+    group: "Facility",
+    // Not committee-gated: maintenance staff read the register because they are the
+    // people who work on it. What they do not see is what the society paid.
+    roles: ["society_admin", "mc_member", "accountant", "auditor", "staff"],
+    pages: [{ href: "/assets/", label: "Assets & Maintenance" }],
+  },
+  {
     group: "Setup",
     pages: [
       // Not admin-gated. Everyone has statutory rights over their own data, and a

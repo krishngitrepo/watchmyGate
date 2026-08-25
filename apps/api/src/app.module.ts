@@ -16,6 +16,7 @@ import { ParkingService } from "./modules/parking/parking.service.js";
 import { DeliveriesService } from "./modules/deliveries/deliveries.service.js";
 import { StorageService } from "./common/storage.service.js";
 import { TasksService } from "./common/tasks.service.js";
+import { AssetsController } from "./modules/assets/assets.controller.js";
 import { AuthController } from "./modules/auth/auth.controller.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { BillingController } from "./modules/billing/billing.controller.js";
@@ -54,6 +55,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
   controllers: [
     HealthController,
     AuthController,
+    AssetsController,
     BillingController,
     HelpdeskController,
     GateController,

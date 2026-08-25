@@ -1418,6 +1418,195 @@ async function main() {
     `expected 403, got ${herBudgets.status}`,
   );
 
+  // ----------------------------------------------------- the asset register
+  console.log("");
+  console.log("--- Assets and maintenance ---");
+
+  const assetCategories = await call("GET", "/v1/assets/categories");
+  check("asset categories for the form", ok(assetCategories), why(assetCategories));
+
+  const lift = await call("POST", "/v1/assets", {
+    code: `LIFT-${stamp}`,
+    name: "Passenger lift, Tower A",
+    category: "lift",
+    towerId,
+    location: "Tower A, ground floor lobby",
+    makeModel: "Kone MonoSpace 500",
+    serialNumber: `KM-${stamp}`,
+    purchaseDate: "2020-04-01",
+    purchaseCost: "1800000.00",
+    supplier: "Kone Elevators India",
+    expectedLifeYears: 15,
+    amcVendor: "Kone Service",
+    amcUntil: new Date(Date.now() + 20 * 86400000).toISOString().slice(0, 10),
+    condition: "good",
+  });
+  check("record an asset", ok(lift), why(lift));
+  const liftId = lift.body?.id;
+
+  const duplicate = await call("POST", "/v1/assets", {
+    code: `LIFT-${stamp}`,
+    name: "A second thing with the same tag",
+    category: "lift",
+  });
+  check(
+    "two assets cannot carry the same tag",
+    duplicate.status === 409,
+    `expected 409, got ${duplicate.status}`,
+  );
+
+  const register = await call("GET", "/v1/assets");
+  check("the register lists it", ok(register), why(register));
+  const onRegister = (register.body ?? []).find((a) => a.id === liftId);
+  check("with its AMC counted down server-side", typeof onRegister?.amcDaysLeft === "number", JSON.stringify(onRegister?.amcDaysLeft));
+
+  // A service that was due a fortnight ago and nobody noticed. This is the state the
+  // register exists to make visible.
+  const overdueDate = new Date(Date.now() - 14 * 86400000).toISOString().slice(0, 10);
+  const service = await call("POST", `/v1/assets/${liftId}/work`, {
+    kind: "service",
+    dueOn: overdueDate,
+    intervalMonths: 3,
+    vendor: "Kone Service",
+    notes: "Quarterly service",
+  });
+  check("schedule a recurring service", ok(service), why(service));
+  const serviceId = service.body?.id;
+
+  const dueList = await call("GET", "/v1/assets/due");
+  check("what is due", ok(dueList), why(dueList));
+  const assetFlagged = (dueList.body?.work ?? []).find((w) => w.id === serviceId);
+  check("the overdue service is assetFlagged as overdue", assetFlagged?.overdue === true, JSON.stringify(assetFlagged));
+  check(
+    "an AMC about to lapse is on the same list",
+    (dueList.body?.amcExpiring ?? []).some((a) => a.id === liftId),
+    "an expiring AMC is the same problem as an overdue service and belongs beside it",
+  );
+
+  const done = await call("POST", `/v1/assets/work/${serviceId}/complete`, {
+    completedOn: today,
+    vendor: "Kone Service",
+    cost: "8500.00",
+    notes: "Door sensor cleaned, guide shoes replaced",
+  });
+  check("record the service as done", ok(done), why(done));
+  check("a recurring job schedules its own successor", Boolean(done.body?.nextScheduledId), why(done));
+
+  const history = await call("GET", `/v1/assets/${liftId}/history`);
+  check("the asset carries its own history", ok(history), why(history));
+  const completed = (history.body ?? []).find((h) => h.id === serviceId);
+  check("the completed entry records what it cost", completed?.cost === "8500.0000", completed?.cost);
+
+  // Counted from the due date, not from today: a service done three weeks late must not
+  // push every future service three weeks later for ever.
+  const next = (history.body ?? []).find((h) => h.id === done.body?.nextScheduledId);
+  const expectedNext = new Date(overdueDate);
+  expectedNext.setMonth(expectedNext.getMonth() + 3);
+  check(
+    "the next service is three months after the last due date, not after today",
+    next?.dueOn === expectedNext.toISOString().slice(0, 10),
+    `next due ${next?.dueOn}, expected ${expectedNext.toISOString().slice(0, 10)}`,
+  );
+
+  const twice = await call("POST", `/v1/assets/work/${serviceId}/complete`, {
+    completedOn: today,
+  });
+  check(
+    "a job already done cannot be completed again",
+    twice.status === 409,
+    `expected 409, got ${twice.status}`,
+  );
+
+  const fixedAssets = await call("GET", "/v1/assets/schedule");
+  check("the fixed-asset schedule", ok(fixedAssets), why(fixedAssets));
+  check(
+    "it says which method it used rather than presenting a bare figure",
+    fixedAssets.body?.method === "straight_line" && typeof fixedAssets.body?.basis === "string",
+    "an auditor reading this next to their own schedule has to be told how ours was made",
+  );
+  const liftRow = (fixedAssets.body?.assets ?? []).find((a) => a.id === liftId);
+  check(
+    "cost less accumulated depreciation is the written-down value",
+    liftRow &&
+      toPaise(liftRow.writtenDownValue) ===
+        toPaise(liftRow.purchaseCost) - toPaise(liftRow.accumulatedDepreciation),
+    JSON.stringify(liftRow),
+  );
+  check(
+    "depreciation never exceeds what the thing cost",
+    (fixedAssets.body?.assets ?? []).every(
+      (a) => toPaise(a.accumulatedDepreciation) <= toPaise(a.purchaseCost),
+    ),
+    "an asset depreciated past zero is a negative asset",
+  );
+  check(
+    "the category totals add up to the grand total",
+    toPaise(fixedAssets.body?.totals?.cost) ===
+      (fixedAssets.body?.byCategory ?? []).reduce((sum, c) => sum + toPaise(c.cost), 0n),
+    JSON.stringify(fixedAssets.body?.totals),
+  );
+
+  // A technician needs to find the pump they are servicing. They do not need to know the
+  // society paid four lakh for it.
+  const technicianPhone = `+9198${stamp}07`;
+  const madeStaff = await call("POST", "/v1/society/roles", {
+    phone: technicianPhone,
+    name: `Console Technician ${stamp}`,
+    roleCode: "staff",
+  });
+  check("a maintenance technician exists to test against", ok(madeStaff), why(madeStaff));
+
+  const technician = await tokenFor(technicianPhone, societyId);
+  const staffView = await callAs(technician, "GET", "/v1/assets");
+  check("staff can read the register", ok(staffView), why(staffView));
+  check(
+    "but the register shows staff no costs",
+    Array.isArray(staffView.body) &&
+      staffView.body.every((a) => a.purchaseCost === null || a.purchaseCost === undefined),
+    "what the society paid was exposed to a technician",
+  );
+  const staffSchedule = await callAs(technician, "GET", "/v1/assets/schedule");
+  check(
+    "and the fixed-asset schedule is closed to them entirely",
+    staffSchedule.status === 403,
+    `expected 403, got ${staffSchedule.status}`,
+  );
+
+  // A guard has no use for a plant register, and no reason to hold one on a handset that
+  // changes hands every shift.
+  const guardToken = await tokenFor("+919900000003", societyId);
+  const guardView = await callAs(guardToken, "GET", "/v1/assets");
+  check(
+    "a guard cannot read the asset register at all",
+    guardView.status === 403,
+    `expected 403, got ${guardView.status}`,
+  );
+
+  const herAssets = await callAs(priya, "GET", "/v1/assets");
+  check(
+    "a resident cannot read the asset register",
+    herAssets.status === 403,
+    `expected 403, got ${herAssets.status}`,
+  );
+
+  const retired = await call("POST", `/v1/assets/${liftId}/dispose`, {
+    disposedOn: today,
+    note: "Replaced under the 2026 modernisation contract.",
+  });
+  check("retire an asset", ok(retired), why(retired));
+  const afterDisposal = await call("GET", "/v1/assets/due");
+  check(
+    "work outstanding on something retired stops nagging",
+    !(afterDisposal.body?.work ?? []).some((w) => w.assetId === liftId),
+    "a disposed asset was still on the due list",
+  );
+  const stillListed = (await call("GET", "/v1/assets")).body?.find((a) => a.id === liftId);
+  check(
+    "but the asset itself is kept, with what happened to it",
+    stillListed?.status === "disposed" && stillListed?.disposedOn === today,
+    JSON.stringify(stillListed),
+  );
+
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");
 

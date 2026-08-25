@@ -813,3 +813,83 @@ kids checkout, MG-22 digital register, MG-26 offline emergency contacts.
 > means no journal entry ever falls inside it, so "spent but never budgeted" could not
 > appear. That row is now proven against the current financial year, which has real
 > postings in it.
+
+---
+
+[2026-08-25 09:20 IST] — THE ASSET AND MAINTENANCE REGISTER (MG-7)
+
+**WHAT:** Migration `0012_assets.sql` (`assets`, `asset_maintenance`, one trigger, RLS),
+`AssetsController` with nine endpoints, a console page at `/assets/`, and fourteen new
+database-level control tests in `isolation.test.ts`.
+
+**WHY:** On every RFP, and for a reason that is not about inventory. What a committee
+loses when the register lives in one facility manager's head is not the list. It is
+knowing which lift is under AMC and until when on the morning it stops between floors,
+that the DG service was due in March and nobody noticed until the June outage, the
+fixed-asset schedule the auditor asks for every year, and what the outgoing committee
+actually handed over.
+
+**HOW:** Two tables. `assets` is what the society owns; `asset_maintenance` is the work —
+due, overdue or done — because a register without a schedule attached is a list nobody
+opens twice. The console page opens on **what is due** rather than on the register, for
+the same reason: the reason to open it is the work.
+
+AMC expiry sits on the same list as overdue maintenance, because from a committee's point
+of view they are one problem: something is about to stop being covered.
+
+**DESIGN — the parts that are decisions rather than fields.**
+
+*A completed job is final, by trigger.* This log is what a society produces when a lift
+injures somebody and the question is whether it was serviced. A log whose entries can be
+edited afterwards proves nothing, and the temptation to tidy it up arrives exactly when it
+matters most. Notes can still be added — recording what was found is not restating what
+happened, and a log nobody can annotate is a log people keep somewhere else.
+
+*The register itself stays editable*, deliberately and unlike the log. A facility manager
+correcting a serial number they mistyped must not be pushed back to a spreadsheet.
+
+*A recurring job schedules its successor from the due date, not from today.* A service
+done three weeks late must not push every future service three weeks later for ever.
+
+*Depreciation is computed, never stored*, and the payload says which method it used. A
+stored written-down value drifts the moment somebody edits a cost or a life. And a
+co-operative society's auditor may use the written-down-value method, so the report states
+its basis in words — a figure of ours read next to theirs, unlabelled, is worse than no
+figure. Assets with no expected life are carried at cost and **counted separately**, so
+the omission is visible rather than silently rolled into a total.
+
+*A retired asset is never deleted*; only its outstanding work is. What the society used to
+own and what happened to it is exactly the question a handover argument turns on.
+
+*Who reads it:* the committee, the accountant, the auditor and maintenance staff. Not a
+guard — a guard reports a broken pump through the helpdesk, which routes it; they have no
+use for a plant register and no reason to hold one on a society-owned handset that changes
+hands every shift. Costs are blanked for staff rather than the row withheld: a technician
+needs to find the pump, not to know the society paid four lakh for it.
+
+**CODE:** `packages/db/migrations/0012_assets.sql`,
+`apps/api/src/modules/assets/assets.controller.ts`,
+`apps/web-admin/src/app/assets/page.tsx`, `packages/db/src/isolation.test.ts`.
+
+**MODEL:** L5
+
+**NEXT:** The gate block — MG-20 guard patrolling, MG-21 kids checkout, MG-22 digital
+register with Excel export, MG-26 offline emergency contacts.
+
+> **A defect I introduced and caught by running everything.**
+>
+> The new control tests disable the budget and maintenance triggers during teardown, the
+> way the existing ledger tests do — because those controls hold against the table owner
+> too, which is the point. I wrote the `DISABLE` and forgot the matching `ENABLE`.
+>
+> `ALTER TABLE ... DISABLE TRIGGER` is DDL and persists. So a green database suite left
+> the budget freeze switched off on the live database, and the next console smoke run
+> reported that an approved budget could be edited — a control absent in the actual
+> infrastructure while every test claiming it stayed green. Fixed, both triggers restored
+> and verified through `pg_trigger`, and the teardown now carries a comment saying why
+> every DISABLE needs its ENABLE.
+>
+> Two smaller ones: `current_date + $1` is a 500 rather than a helpful error because
+> Postgres cannot infer the parameter's type, and depreciation rounded to four decimals
+> against a cost stored at four made cost minus depreciation differ from the written-down
+> value by a paise. Rounded to two, where anyone will actually check it.

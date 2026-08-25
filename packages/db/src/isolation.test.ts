@@ -163,6 +163,13 @@ afterAll(async () => {
   await owner.query("ALTER TABLE journal_lines   DISABLE TRIGGER trg_journal_lines_immutable");
   await owner.query("ALTER TABLE journal_entries DISABLE TRIGGER trg_journal_entries_immutable");
 
+  // Same for the budget freeze and the maintenance log, for the same reason. An approved
+  // budget's lines and a completed job are unremovable by any role through ordinary SQL,
+  // which is what makes them evidence; clearing them is a privileged DDL act.
+  await owner.query("ALTER TABLE budget_lines      DISABLE TRIGGER trg_budget_lines_frozen");
+  await owner.query("ALTER TABLE budgets           DISABLE TRIGGER trg_budget_approval_one_way");
+  await owner.query("ALTER TABLE asset_maintenance DISABLE TRIGGER trg_maintenance_final");
+
   // Ordered by dependency; the owner bypasses RLS so this reaches both societies.
   await owner.query("BEGIN");
   for (const table of [
@@ -182,6 +189,12 @@ afterAll(async () => {
     "staff",
     "deliveries",
     "dlt_templates",
+    // Budget lines reference ledger accounts, and asset maintenance references assets,
+    // so both come out before the tables they point at.
+    "budget_lines",
+    "budgets",
+    "asset_maintenance",
+    "assets",
     "journal_lines",
     "journal_entries",
     "ledger_accounts",
@@ -206,6 +219,13 @@ afterAll(async () => {
 
   await owner.query("ALTER TABLE journal_lines   ENABLE TRIGGER trg_journal_lines_immutable");
   await owner.query("ALTER TABLE journal_entries ENABLE TRIGGER trg_journal_entries_immutable");
+  // Every DISABLE above needs its ENABLE here. `ALTER TABLE ... DISABLE TRIGGER` is DDL
+  // and persists: forgetting one leaves the control switched off on the database itself,
+  // long after this run has ended, which is how a green test suite ships an absent
+  // safeguard. Found exactly that way.
+  await owner.query("ALTER TABLE budget_lines      ENABLE TRIGGER trg_budget_lines_frozen");
+  await owner.query("ALTER TABLE budgets           ENABLE TRIGGER trg_budget_approval_one_way");
+  await owner.query("ALTER TABLE asset_maintenance ENABLE TRIGGER trg_maintenance_final");
 
   await owner.end();
   await app.end();
@@ -624,5 +644,231 @@ describe.skipIf(!configured)("amenity double-booking is impossible", () => {
     await asSociety(fx.societyB, (c) =>
       c.query("DELETE FROM amenities WHERE id = $1", [amenity]),
     );
+  });
+});
+
+/**
+ * The controls added with budgets and the asset register (migrations 0011, 0012).
+ *
+ * Every one of these is asserted through the **application role**, because that is the
+ * only role the API ever holds and the claim being made is that these hold even when the
+ * calling code is wrong. A service-layer check would pass this file and fail the moment
+ * anybody opened psql.
+ */
+describe.skipIf(!configured)("a passed budget cannot be quietly edited", () => {
+  // Only one budget per year may be live, so fixtures walk the years rather than
+  // guessing at them — a random year collides often enough to make this file flaky.
+  let nextYear = 2000;
+
+  /** A fresh approved budget with one line, in a year nothing else is using. */
+  async function approvedBudget(): Promise<{ budget: string; line: string }> {
+    const year = (nextYear += 1);
+    return asSociety(fx.societyB, async (c) => {
+      const budget = (
+        await c.query(
+          `INSERT INTO budgets (society_id, financial_year, title, created_by)
+           VALUES ($1, $2, 'Fixture', $3) RETURNING id`,
+          [fx.societyB, year, fx.personB],
+        )
+      ).rows[0].id as string;
+
+      const line = (
+        await c.query(
+          `INSERT INTO budget_lines (society_id, budget_id, account_id, annual_amount)
+           VALUES ($1, $2, $3, 1000) RETURNING id`,
+          [fx.societyB, budget, fx.accountB],
+        )
+      ).rows[0].id as string;
+
+      await c.query(
+        `UPDATE budgets SET status = 'approved', approved_by = $2, approved_at = now()
+         WHERE id = $1`,
+        [budget, fx.personB],
+      );
+      return { budget, line };
+    });
+  }
+
+  it("rejects an UPDATE on a line of an approved budget", async () => {
+    const { line } = await approvedBudget();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE budget_lines SET annual_amount = 999999 WHERE id = $1", [line]),
+      ),
+    ).rejects.toThrow(/approved/i);
+  });
+
+  it("rejects a new line added to an approved budget", async () => {
+    const { budget } = await approvedBudget();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query(
+          `INSERT INTO budget_lines (society_id, budget_id, account_id, annual_amount)
+           VALUES ($1, $2, $3, 5000)`,
+          [fx.societyB, budget, fx.accountB],
+        ),
+      ),
+    ).rejects.toThrow(/approved/i);
+  });
+
+  it("rejects DELETE of a line of an approved budget", async () => {
+    const { line } = await approvedBudget();
+    await expect(
+      asSociety(fx.societyB, (c) => c.query("DELETE FROM budget_lines WHERE id = $1", [line])),
+    ).rejects.toThrow(/approved/i);
+  });
+
+  it("refuses to return an approved budget to draft", async () => {
+    // "Unapprove, edit, re-approve" is the same edit taken the long way round.
+    const { budget } = await approvedBudget();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE budgets SET status = 'draft' WHERE id = $1", [budget]),
+      ),
+    ).rejects.toThrow(/draft/i);
+  });
+
+  it("refuses to revive a superseded budget", async () => {
+    const { budget } = await approvedBudget();
+    await asSociety(fx.societyB, (c) =>
+      c.query("UPDATE budgets SET status = 'superseded' WHERE id = $1", [budget]),
+    );
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE budgets SET status = 'approved' WHERE id = $1", [budget]),
+      ),
+    ).rejects.toThrow(/revived/i);
+  });
+
+  it("does not let the application delete a budget at all", async () => {
+    // A budget the AGM passed is the record of a decision. Superseding is the only exit.
+    const { budget } = await approvedBudget();
+    await expect(
+      asSociety(fx.societyB, (c) => c.query("DELETE FROM budgets WHERE id = $1", [budget])),
+    ).rejects.toThrow(/permission denied/i);
+  });
+
+  it("allows a draft to be edited freely, proving the freeze is the approval and not the table", async () => {
+    const year = (nextYear += 1);
+    const line = await asSociety(fx.societyB, async (c) => {
+      const budget = (
+        await c.query(
+          `INSERT INTO budgets (society_id, financial_year, title, created_by)
+           VALUES ($1, $2, 'Draft fixture', $3) RETURNING id`,
+          [fx.societyB, year, fx.personB],
+        )
+      ).rows[0].id as string;
+      return (
+        await c.query(
+          `INSERT INTO budget_lines (society_id, budget_id, account_id, annual_amount)
+           VALUES ($1, $2, $3, 1000) RETURNING id`,
+          [fx.societyB, budget, fx.accountB],
+        )
+      ).rows[0].id as string;
+    });
+
+    const updated = await asSociety(fx.societyB, (c) =>
+      c.query("UPDATE budget_lines SET annual_amount = 2000 WHERE id = $1", [line]),
+    );
+    expect(updated.rowCount).toBe(1);
+  });
+});
+
+describe.skipIf(!configured)("a maintenance record cannot be tidied up afterwards", () => {
+  async function asset(code: string): Promise<string> {
+    return asSociety(fx.societyB, async (c) =>
+      (
+        await c.query(
+          `INSERT INTO assets (society_id, code, name, category, purchase_cost)
+           VALUES ($1, $2, 'Fixture lift', 'lift', 400000) RETURNING id`,
+          [fx.societyB, code],
+        )
+      ).rows[0].id as string,
+    );
+  }
+
+  async function completedJob(): Promise<string> {
+    const assetId = await asset(`FIX-${randomUUID().slice(0, 8)}`);
+    return asSociety(fx.societyB, async (c) => {
+      const id = (
+        await c.query(
+          `INSERT INTO asset_maintenance (society_id, asset_id, kind, due_on)
+           VALUES ($1, $2, 'service', current_date - 10) RETURNING id`,
+          [fx.societyB, assetId],
+        )
+      ).rows[0].id as string;
+      await c.query(
+        "UPDATE asset_maintenance SET completed_on = current_date, cost = 5000 WHERE id = $1",
+        [id],
+      );
+      return id;
+    });
+  }
+
+  it("refuses to move the date a job was completed", async () => {
+    // This log is what a society produces when a lift injures somebody and the question
+    // is whether it was serviced. The temptation to adjust it arrives exactly then.
+    const job = await completedJob();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query(
+          "UPDATE asset_maintenance SET completed_on = current_date - 30 WHERE id = $1",
+          [job],
+        ),
+      ),
+    ).rejects.toThrow(/already recorded as done/i);
+  });
+
+  it("refuses to un-complete a job", async () => {
+    const job = await completedJob();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE asset_maintenance SET completed_on = NULL WHERE id = $1", [job]),
+      ),
+    ).rejects.toThrow(/already recorded as done/i);
+  });
+
+  it("refuses to restate what a completed job cost", async () => {
+    const job = await completedJob();
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE asset_maintenance SET cost = 1 WHERE id = $1", [job]),
+      ),
+    ).rejects.toThrow(/already recorded as done/i);
+  });
+
+  it("refuses to move a completed job onto a different asset", async () => {
+    const job = await completedJob();
+    const other = await asset(`FIX-${randomUUID().slice(0, 8)}`);
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE asset_maintenance SET asset_id = $2 WHERE id = $1", [job, other]),
+      ),
+    ).rejects.toThrow(/already recorded as done/i);
+  });
+
+  it("still allows notes to be added to a completed job", async () => {
+    // Adding what was found is not restating what happened, and a log nobody can annotate
+    // is a log people keep somewhere else.
+    const job = await completedJob();
+    const result = await asSociety(fx.societyB, (c) =>
+      c.query("UPDATE asset_maintenance SET notes = 'Bearing replaced' WHERE id = $1", [job]),
+    );
+    expect(result.rowCount).toBe(1);
+  });
+
+  it("refuses two assets carrying the same tag", async () => {
+    const code = `DUP-${randomUUID().slice(0, 8)}`;
+    await asset(code);
+    await expect(asset(code)).rejects.toThrow(/uq_asset_code|duplicate key/i);
+  });
+
+  it("refuses to mark an asset disposed without saying when", async () => {
+    const id = await asset(`DIS-${randomUUID().slice(0, 8)}`);
+    await expect(
+      asSociety(fx.societyB, (c) =>
+        c.query("UPDATE assets SET status = 'disposed' WHERE id = $1", [id]),
+      ),
+    ).rejects.toThrow(/ck_asset_disposal/);
   });
 });

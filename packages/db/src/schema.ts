@@ -1705,3 +1705,100 @@ export const budgetLines = pgTable(
   },
   (t) => [index("ix_budget_line_budget").on(t.budgetId)],
 );
+
+// ------------------------------------------------------------------ assets
+
+/**
+ * What the society physically owns (MG-7).
+ *
+ * The value is not the list. It is knowing which lift is under AMC and until when on the
+ * morning it stops between floors, that the DG service was due in March, and what the
+ * outgoing committee actually handed over. Controls in migration 0012.
+ *
+ * Depreciation is **computed, never stored** — a stored written-down value drifts the
+ * moment somebody edits the cost or the life, and then the register and the auditor's
+ * schedule disagree with no way to tell which one moved.
+ */
+export const assets = pgTable(
+  "assets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    /** The tag physically stuck on the machine. Unique within the society. */
+    code: varchar("code", { length: 40 }).notNull(),
+    name: varchar("name", { length: 160 }).notNull(),
+    category: varchar("category", { length: 40 }).notNull(),
+
+    towerId: uuid("tower_id"),
+    /** "basement 2, near the ramp" — how a facility manager gives directions. */
+    location: varchar("location", { length: 200 }),
+
+    makeModel: varchar("make_model", { length: 160 }),
+    serialNumber: varchar("serial_number", { length: 120 }),
+
+    purchaseDate: date("purchase_date"),
+    purchaseCost: money("purchase_cost").notNull().default("0"),
+    supplier: varchar("supplier", { length: 160 }),
+    invoiceRef: varchar("invoice_ref", { length: 120 }),
+    warrantyUntil: date("warranty_until"),
+
+    /** Straight-line life for the fixed-asset schedule. Null is allowed on purpose. */
+    expectedLifeYears: integer("expected_life_years"),
+
+    amcVendor: varchar("amc_vendor", { length: 160 }),
+    amcUntil: date("amc_until"),
+    /** The contract is a document; this is the fact that one exists. */
+    amcDocumentId: uuid("amc_document_id"),
+
+    /** `good` | `fair` | `poor` | `out_of_service`. */
+    condition: varchar("condition", { length: 20 }).notNull().default("good"),
+    /** `in_use` | `in_store` | `disposed`. */
+    status: varchar("status", { length: 20 }).notNull().default("in_use"),
+    disposedOn: date("disposed_on"),
+    disposalNote: text("disposal_note"),
+
+    notes: text("notes"),
+    recordedBy: uuid("recorded_by"),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex("uq_asset_code").on(t.societyId, t.code),
+    index("ix_asset_society").on(t.societyId, t.category, t.code),
+    index("ix_asset_tower").on(t.societyId, t.towerId),
+  ],
+);
+
+/**
+ * The work — due, overdue or done.
+ *
+ * A register without a schedule attached is a list nobody opens twice. A completed entry
+ * is final by trigger: this log is the evidence a society produces when a lift injures
+ * somebody and the question is whether it was serviced, and the temptation to tidy it up
+ * arrives exactly when it matters most.
+ */
+export const assetMaintenance = pgTable(
+  "asset_maintenance",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    assetId: uuid("asset_id")
+      .notNull()
+      .references(() => assets.id, { onDelete: "cascade" }),
+    /** `service` | `inspection` | `amc_visit` | `statutory` | `repair`. */
+    kind: varchar("kind", { length: 24 }).notNull().default("service"),
+    dueOn: date("due_on").notNull(),
+    /** Null for a one-off. Set, and completing this job schedules the next. */
+    intervalMonths: integer("interval_months"),
+    completedOn: date("completed_on"),
+    vendor: varchar("vendor", { length: 160 }),
+    cost: money("cost"),
+    notes: text("notes"),
+    recordedBy: uuid("recorded_by"),
+    ...timestamps,
+  },
+  (t) => [index("ix_maintenance_asset").on(t.assetId, t.dueOn)],
+);
