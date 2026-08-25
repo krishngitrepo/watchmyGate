@@ -33,6 +33,7 @@ import {
 import { ConflictError, NotFoundError, ValidationError } from "../../common/errors.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
 import { LedgerService } from "../ledger/ledger.service.js";
+import { PaymentsService } from "../payments/payments.service.js";
 
 export interface PreviewInput {
   unitId: string;
@@ -68,7 +69,10 @@ export interface PreviewResult {
 
 @Injectable()
 export class BillingService {
-  constructor(private readonly ledger: LedgerService) {}
+  constructor(
+    private readonly ledger: LedgerService,
+    private readonly payments: PaymentsService,
+  ) {}
 
   /**
    * Compute an invoice without saving it.
@@ -127,7 +131,9 @@ export class BillingService {
    * Both or neither: an invoice without a ledger entry is money that exists on a bill
    * but not in the books, which is exactly the discrepancy an auditor finds.
    */
-  async issue(input: PreviewInput): Promise<{ invoiceId: string; invoiceNumber: string }> {
+  async issue(
+    input: PreviewInput,
+  ): Promise<{ invoiceId: string; invoiceNumber: string; creditApplied: string }> {
     const { societyId } = currentContext();
 
     return tx(async (db) => {
@@ -246,7 +252,13 @@ export class BillingService {
         .set({ journalEntryId: entry.id })
         .where(eq(schema.invoices.id, invoice.id));
 
-      return { invoiceId: invoice.id, invoiceNumber };
+      // MG-11. A flat that paid ten thousand against seven thousand of bills is in
+      // credit, and the credit has to meet the next bill — otherwise we issue an invoice
+      // marked fully outstanding to somebody whose money we are already holding, and
+      // then send them a reminder. Same transaction as the invoice, deliberately.
+      const sweep = await this.payments.applyAdvancesIn(db, societyId, input.unitId);
+
+      return { invoiceId: invoice.id, invoiceNumber, creditApplied: sweep.applied };
     });
   }
 

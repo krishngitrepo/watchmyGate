@@ -54,6 +54,33 @@ export class PaymentsController {
     return this.payments.createDestination(destinationSchema.parse(body));
   }
 
+  /**
+   * Who is in credit, and by how much (MG-11).
+   *
+   * The other half of "outstanding". A society always owes somebody — the flat that pays
+   * a round figure, the owner who settles the year in April — and until now this product
+   * could only answer the question that runs in its favour.
+   */
+  @Get("credits")
+  async credits() {
+    this.requireFinance();
+    return this.payments.creditBalances();
+  }
+
+  /**
+   * Set held credit against open invoices, oldest due first.
+   *
+   * Issuing an invoice does this automatically for that flat. This endpoint exists for
+   * the backlog of credit taken before the sweep existed, and for the case where an
+   * invoice is voided and its payment needs somewhere to go.
+   */
+  @Post("credits/apply")
+  async applyCredits(@Body() body: unknown) {
+    this.requireFinance();
+    const input = z.object({ unitId: z.string().uuid().optional() }).parse(body ?? {});
+    return this.payments.applyAdvances(input.unitId);
+  }
+
   @Get("outstanding")
   async outstanding() {
     this.requireFinance();

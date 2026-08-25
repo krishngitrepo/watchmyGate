@@ -39,6 +39,18 @@ import { ConflictError, NotFoundError, ValidationError } from "../../common/erro
 import { currentContext, tx } from "../../common/tenant-context.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 
+export interface AdvanceSweep {
+  /** How much credit was set against open invoices, as a money string. */
+  applied: string;
+  invoicesSettled: number;
+  unitsTouched: number;
+}
+
+/** Unwrap the pg driver's result envelope, which drizzle's `execute` passes through. */
+function rowsOf<T>(result: unknown): T[] {
+  return ((result as { rows?: T[] })?.rows ?? (result as T[])) ?? [];
+}
+
 export interface RecordPaymentInput {
   /** Provider event id — the idempotency key. Razorpay retries webhooks aggressively. */
   providerEventId: string;
@@ -346,6 +358,197 @@ export class PaymentsService {
   }
 
   /** Recompute paid / partially_paid from allocations, never from a running total. */
+  // ------------------------------------------------------------- advances
+  //
+  // MG-11. Until now this product could answer "who owes us" and could not answer "whom
+  // do we owe" — and a society always owes somebody. A flat pays a round ten thousand
+  // against seven thousand of bills, or pays the year up front in April, and the balance
+  // sits on the receipt unallocated.
+  //
+  // The ledger already has it right: `recordPayment` credits receivable 1200 for the
+  // whole receipt, allocated or not, so the unit's account is genuinely in credit. What
+  // was missing is that nothing ever *showed* it and nothing ever *swept* it onto the
+  // next bill — so a flat in credit still received a bill marked fully outstanding, and
+  // then a reminder.
+
+  /**
+   * Every flat's position: billed, paid, and which way the balance runs.
+   *
+   * One query rather than two, because "in arrears" and "in credit" are the same number
+   * with a different sign, and computing them separately is how they come to disagree.
+   */
+  async creditBalances(): Promise<
+    Array<{
+      unitId: string;
+      unitNumber: string;
+      towerName: string;
+      billed: string;
+      received: string;
+      allocated: string;
+      /** Received but not yet applied to any invoice. Never negative. */
+      advance: string;
+      /** Issued but unpaid. Never negative. */
+      outstanding: string;
+      /** Positive: the flat owes. Negative: the society owes the flat. */
+      net: string;
+    }>
+  > {
+    return tx(async (db) => {
+      const result = await db.execute(sql`
+        WITH billed AS (
+          SELECT unit_id,
+                 sum(total) FILTER (WHERE status <> 'draft')                AS billed,
+                 sum(total) FILTER (WHERE status IN ('issued','partially_paid')) AS open_total
+          FROM invoices
+          GROUP BY unit_id
+        ),
+        paid AS (
+          SELECT r.unit_id,
+                 sum(r.amount)                                              AS received,
+                 sum(COALESCE(a.applied, 0))                                AS allocated
+          FROM receipts r
+          LEFT JOIN LATERAL (
+            SELECT sum(amount) AS applied
+            FROM receipt_allocations WHERE receipt_id = r.id
+          ) a ON true
+          WHERE r.unit_id IS NOT NULL
+          GROUP BY r.unit_id
+        ),
+        applied_to_open AS (
+          SELECT i.unit_id, sum(a.amount) AS applied
+          FROM receipt_allocations a
+          JOIN invoices i ON i.id = a.invoice_id
+          WHERE i.status IN ('issued','partially_paid')
+          GROUP BY i.unit_id
+        )
+        SELECT
+          u.id                                        AS "unitId",
+          u.number                                    AS "unitNumber",
+          t.name                                      AS "towerName",
+          COALESCE(b.billed, 0)::text                 AS billed,
+          COALESCE(p.received, 0)::text               AS received,
+          COALESCE(p.allocated, 0)::text              AS allocated,
+          (COALESCE(p.received, 0) - COALESCE(p.allocated, 0))::text AS advance,
+          GREATEST(
+            COALESCE(b.open_total, 0) - COALESCE(o.applied, 0), 0
+          )::text                                     AS outstanding,
+          (
+            GREATEST(COALESCE(b.open_total, 0) - COALESCE(o.applied, 0), 0)
+            - (COALESCE(p.received, 0) - COALESCE(p.allocated, 0))
+          )::text                                     AS net
+        FROM units u
+        JOIN towers t ON t.id = u.tower_id
+        LEFT JOIN billed b          ON b.unit_id = u.id
+        LEFT JOIN paid p            ON p.unit_id = u.id
+        LEFT JOIN applied_to_open o ON o.unit_id = u.id
+        WHERE COALESCE(b.billed, 0) <> 0 OR COALESCE(p.received, 0) <> 0
+        ORDER BY (
+          COALESCE(p.received, 0) - COALESCE(p.allocated, 0)
+        ) DESC, u.number
+      `);
+      return rowsOf(result);
+    });
+  }
+
+  /**
+   * Set a flat's credit against what it owes.
+   *
+   * **No journal entry is posted, and that is correct rather than an omission.** The
+   * receipt already debited bank and credited the unit's receivable when it was taken;
+   * an allocation only records *which* invoice a payment answers. Posting again here
+   * would double-count the money — the exact bug that makes a set of books stop
+   * balancing, and the reason allocation lives in a sub-ledger.
+   *
+   * Idempotent by construction: it can only allocate what is unallocated, to what is
+   * unpaid. Running it twice does nothing the second time.
+   */
+  async applyAdvances(unitId?: string): Promise<AdvanceSweep> {
+    const { societyId } = currentContext();
+    return tx(async (db) => this.applyAdvancesIn(db, societyId, unitId));
+  }
+
+  /**
+   * The same sweep, inside a caller's transaction.
+   *
+   * Issuing an invoice sweeps any credit onto it, and that has to happen in the *same*
+   * transaction as the invoice — under Neon's transaction-mode pooler a nested `tx()` is
+   * a different connection and a different transaction, so a sweep that failed would
+   * leave the invoice issued and the credit stranded.
+   */
+  async applyAdvancesIn(
+    db: Parameters<Parameters<typeof tx>[0]>[0],
+    societyId: string,
+    unitId?: string,
+  ): Promise<AdvanceSweep> {
+    {
+      const credits = await db.execute(sql`
+        SELECT r.id, r.unit_id AS "unitId",
+               (r.amount - COALESCE((
+                 SELECT sum(amount) FROM receipt_allocations WHERE receipt_id = r.id
+               ), 0))::text AS spare
+        FROM receipts r
+        WHERE r.unit_id IS NOT NULL
+          AND (${unitId ?? null}::uuid IS NULL OR r.unit_id = ${unitId ?? null})
+          AND r.amount > COALESCE((
+                SELECT sum(amount) FROM receipt_allocations WHERE receipt_id = r.id
+              ), 0)
+        -- Oldest money first, so a receipt does not sit unapplied for years while newer
+        -- ones are consumed around it.
+        ORDER BY r.received_on, r.receipt_number
+      `);
+
+      const spare = rowsOf<{ id: string; unitId: string; spare: string }>(credits);
+
+      let applied = ZERO;
+      const settled = new Set<string>();
+      const touched = new Set<string>();
+
+      for (const credit of spare) {
+        let remaining = money(credit.spare);
+        if (remaining.lte(ZERO)) continue;
+
+        // Oldest due first: the convention residents expect, and the one that minimises
+        // their own late fees. Newest-first would quietly maximise interest charged to
+        // our customers.
+        const open = await db.execute(sql`
+          SELECT id, (total - COALESCE((
+                   SELECT sum(amount) FROM receipt_allocations WHERE invoice_id = invoices.id
+                 ), 0))::text AS due
+          FROM invoices
+          WHERE unit_id = ${credit.unitId}
+            AND status IN ('issued','partially_paid')
+          ORDER BY due_date, invoice_number
+        `);
+
+        for (const invoice of rowsOf<{ id: string; due: string }>(open)) {
+          if (remaining.lte(ZERO)) break;
+          const due = money(invoice.due);
+          if (due.lte(ZERO)) continue;
+
+          const amount = remaining.lt(due) ? remaining : due;
+          await db.insert(schema.receiptAllocations).values({
+            societyId,
+            receiptId: credit.id,
+            invoiceId: invoice.id,
+            amount: toDbString(amount),
+          });
+          await this.refreshInvoiceStatus(db, invoice.id);
+
+          applied = applied.plus(amount) as typeof applied;
+          remaining = remaining.minus(amount) as typeof remaining;
+          if (amount.gte(due)) settled.add(invoice.id);
+          touched.add(credit.unitId);
+        }
+      }
+
+      return {
+        applied: toDbString(applied),
+        invoicesSettled: settled.size,
+        unitsTouched: touched.size,
+      };
+    }
+  }
+
   private async refreshInvoiceStatus(
     db: Parameters<Parameters<typeof tx>[0]>[0],
     invoiceId: string,

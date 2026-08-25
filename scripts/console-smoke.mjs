@@ -113,6 +113,12 @@ function toPaise(amount) {
   return negative ? -paise : paise;
 }
 
+function fromPaise(paise) {
+  const negative = paise < 0n;
+  const abs = negative ? -paise : paise;
+  return `${negative ? "-" : ""}${abs / 100n}.${String(abs % 100n).padStart(2, "0")}`;
+}
+
 const ok = (r) => r.status >= 200 && r.status < 300;
 const why = (r) => `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
 
@@ -1096,6 +1102,158 @@ async function main() {
     "a resident sees no other flat's receipt",
     ok(herReceipts) && (herReceipts.body ?? []).every((r) => r.unitId !== unitId),
     why(herReceipts),
+  );
+
+  // ----------------------------------------------- credit balances and penalties
+  console.log("");
+  console.log("--- Credit balances and penalties ---");
+
+  // A flat that overpays. The society is now holding money it has not billed for, which
+  // until MG-11 this product could not represent at all.
+  const overpayFlat = await call("POST", "/v1/society/units/bulk", {
+    units: [{ towerId, number: `K${stamp}01`, floor: 2, bhk: 2, carpetAreaSqft: "900.00" }],
+  });
+  check("a flat to overpay", ok(overpayFlat), why(overpayFlat));
+  const creditUnitId = (await call("GET", "/v1/society/units")).body?.find(
+    (u) => u.number === `K${stamp}01`,
+  )?.id;
+
+  const firstBill = {
+    unitId: creditUnitId,
+    periodStart: "2026-06-01",
+    periodEnd: "2026-06-30",
+    dueDate: "2026-07-10",
+    ...(previewBody.meterReadings ? { meterReadings: previewBody.meterReadings } : {}),
+    ...(previewBody.manualAmounts ? { manualAmounts: previewBody.manualAmounts } : {}),
+  };
+  const firstIssued = await call("POST", "/v1/billing/issue", firstBill);
+  check("bill the flat for June", ok(firstIssued), why(firstIssued));
+
+  const juneInvoice = (await call("GET", "/v1/billing/invoices")).body?.find(
+    (i) => i.id === firstIssued.body?.invoiceId,
+  );
+  const juneTotal = toPaise(juneInvoice?.total);
+
+  // Pay a round figure well above the bill.
+  const overpayment = fromPaise(juneTotal + 500000n);
+  const overpaid = await call("POST", "/v1/payments/manual", {
+    unitId: creditUnitId,
+    amount: overpayment,
+    method: "upi",
+    receivedOn: "2026-07-05",
+    reference: `OVERPAY-${stamp}`,
+  });
+  check("record the overpayment", ok(overpaid), why(overpaid));
+  check(
+    "the unapplied remainder is reported, not swallowed",
+    toPaise(overpaid.body?.unallocated) === 500000n,
+    `unallocated was ${overpaid.body?.unallocated}`,
+  );
+
+  const credits = await call("GET", "/v1/payments/credits");
+  check("credit balances list", ok(credits), why(credits));
+  const inCredit = (credits.body ?? []).find((c) => c.unitId === creditUnitId);
+  check(
+    "the flat is shown as holding a credit of exactly what it overpaid",
+    inCredit && toPaise(inCredit.advance) === 500000n,
+    inCredit ? `advance was ${inCredit.advance}` : "flat not listed",
+  );
+  check(
+    "and its net position is the society owing the flat, not the reverse",
+    inCredit && toPaise(inCredit.net) === -500000n,
+    inCredit ? `net was ${inCredit.net}` : "flat not listed",
+  );
+
+  // The sweep: next month's bill must meet the credit rather than going out marked fully
+  // outstanding to somebody whose money we are already holding.
+  const julyBill = { ...firstBill, periodStart: "2026-07-01", periodEnd: "2026-07-31", dueDate: "2026-08-10" };
+  const julyIssued = await call("POST", "/v1/billing/issue", julyBill);
+  check("bill the same flat for July", ok(julyIssued), why(julyIssued));
+  const julyInvoice = (await call("GET", "/v1/billing/invoices")).body?.find(
+    (i) => i.id === julyIssued.body?.invoiceId,
+  );
+  const applied = toPaise(julyIssued.body?.creditApplied);
+
+  // Asserted relationally rather than against a figure typed in here: the bill depends on
+  // this society's charge heads, and a test that hard-codes the answer only proves the
+  // charge heads have not changed.
+  check(
+    "the held credit is set against the new bill automatically",
+    applied === (500000n < toPaise(julyInvoice?.total) ? 500000n : toPaise(julyInvoice?.total)),
+    `applied ${julyIssued.body?.creditApplied} against a bill of ${julyInvoice?.total}`,
+  );
+  check(
+    "the July invoice shows exactly that credit paid against it",
+    julyInvoice && toPaise(julyInvoice.allocated) === applied,
+    julyInvoice ? `allocated ${julyInvoice.allocated}` : "invoice missing",
+  );
+  check(
+    "and its balance is the bill less the credit",
+    julyInvoice && toPaise(julyInvoice.balance) === toPaise(julyInvoice.total) - applied,
+    julyInvoice ? `${julyInvoice.total} - ${julyIssued.body?.creditApplied} != ${julyInvoice.balance}` : "invoice missing",
+  );
+
+  const afterSweep = await call("GET", "/v1/payments/credits");
+  const settled = (afterSweep.body ?? []).find((c) => c.unitId === creditUnitId);
+  check(
+    "the credit left over is what was not needed, and no more",
+    settled && toPaise(settled.advance) === 500000n - applied,
+    settled ? `advance is ${settled.advance}, expected ${fromPaise(500000n - applied)}` : "flat not listed",
+  );
+
+  // Running the sweep again must do nothing: it can only allocate what is unallocated to
+  // what is unpaid, so a second run has nothing to find. A sweep that were not idempotent
+  // would over-apply a receipt and silently mark invoices paid twice.
+  const sweepAgain = await call("POST", "/v1/payments/credits/apply", { unitId: creditUnitId });
+  check(
+    "sweeping a second time applies nothing",
+    ok(sweepAgain) && toPaise(sweepAgain.body?.applied) === 0n,
+    why(sweepAgain),
+  );
+
+  // The books must still balance after all of that — allocation is a sub-ledger entry and
+  // must not have posted a second journal entry for money already recorded.
+  const invariantsAfterSweep = await call("GET", "/v1/ledger/invariants");
+  check(
+    "the ledger still balances after a credit sweep",
+    ok(invariantsAfterSweep) && invariantsAfterSweep.body?.ok === true,
+    why(invariantsAfterSweep),
+  );
+
+  const penalties = await call("GET", "/v1/ledger/penalties?from=2026-01-01&to=2026-12-31");
+  check("penalty report", ok(penalties), why(penalties));
+  check(
+    "it states the rule that produced the charges, not just the charges",
+    penalties.body?.policy === null ||
+      typeof penalties.body?.policy?.percentPerMonth === "string",
+    "no policy on the report",
+  );
+  check(
+    "charged, recovered and outstanding are separated",
+    typeof penalties.body?.totals?.charged === "string" &&
+      typeof penalties.body?.totals?.recovered === "string" &&
+      typeof penalties.body?.totals?.outstanding === "string",
+    why(penalties),
+  );
+  check(
+    "recovered plus outstanding equals charged",
+    toPaise(penalties.body?.totals?.recovered) + toPaise(penalties.body?.totals?.outstanding) ===
+      toPaise(penalties.body?.totals?.charged),
+    JSON.stringify(penalties.body?.totals),
+  );
+  check(
+    "every invoice on it actually carries a late fee",
+    (penalties.body?.invoices ?? []).every((i) => toPaise(i.lateFee) > 0n),
+    "an invoice with no penalty appeared in the penalty report",
+  );
+
+  // A resident has no business reading the society's penalty report — it is every
+  // neighbour's payment behaviour on one page.
+  const herPenalties = await callAs(priya, "GET", "/v1/ledger/penalties");
+  check(
+    "a resident cannot read the penalty report",
+    herPenalties.status === 403,
+    `expected 403, got ${herPenalties.status}`,
   );
 
   // -------------------------------------------------------------- the rail

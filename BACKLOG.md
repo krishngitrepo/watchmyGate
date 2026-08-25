@@ -7,7 +7,7 @@ broke. Code that exists but has never been exercised against the real dependency
 
 Counts as of the last update: **431 TypeScript tests** (db 238, money 66, api 114,
 worker 13), **81 Dart tests** (guard 61, resident 20), **30 Python tests**, **45
-end-to-end checks**, **35 Phase 2 smoke checks** and **163 console smoke checks** — all
+end-to-end checks**, **35 Phase 2 smoke checks** and **183 console smoke checks** — all
 green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
@@ -235,8 +235,8 @@ pages*, not missing foundations, which is why they rank first.
 | MG-8 | PR/PO with multi-level approval chain | Pro | Todo | Where MyGate's ERP differentiation actually lives |
 | MG-9 | Vendor bills and payment history | Pro | Todo | |
 | MG-10 | Security deposits — collect, hold, reverse | Pro | Todo | MyGate ties this to amenity bookings |
-| MG-11 | Advance and credit balances per flat | Pro | Todo | We track dues; a flat in credit is not modelled |
-| MG-12 | Penalty report + invoice-footer penalty summary | Pro | Partial | Footer done: the charge is printed next to the rule that produced it. The report is next |
+| MG-11 | Advance and credit balances per flat | Pro | **Done** | Modelled, reported, and swept onto the next invoice inside the same transaction |
+| MG-12 | Penalty report + invoice-footer penalty summary | Pro | **Done** | The footer prints the charge next to the rule; the report separates charged from collected |
 | MG-13 | Period lock / audit lock by financial year | Pro | **Done** | Reopening needs a second person and a stated reason |
 | MG-14 | GST returns, e-invoicing, TDS 194C/194J, Form 26Q | Pro | Todo | |
 | MG-15 | Slab-based penalty configuration | Pro | Partial | We have one percentage per month, not slabs |

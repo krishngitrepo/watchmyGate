@@ -51,6 +51,17 @@ interface Preview {
   gstApplied: boolean;
 }
 
+interface Credit {
+  unitId: string;
+  unitNumber: string;
+  towerName: string;
+  received: string;
+  allocated: string;
+  advance: string;
+  outstanding: string;
+  net: string;
+}
+
 interface Invoice {
   id: string;
   invoiceNumber: string;
@@ -91,6 +102,7 @@ export default function Billing() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [charges, setCharges] = useState<ChargeType[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [credits, setCredits] = useState<Credit[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState(false);
@@ -109,6 +121,14 @@ export default function Billing() {
       setRows(dues);
       setUnits(unitList);
       setInvoices(invoiceList);
+
+      // Credit is committee-and-accountant only, like arrears. A reader without money
+      // authority should see the rest of the page rather than one 403 blanking it.
+      try {
+        setCredits(await api.get<Credit[]>("/v1/payments/credits"));
+      } catch {
+        setCredits([]);
+      }
 
       // Charge heads decide which extra boxes the invoice form needs. A reader without
       // money authority is refused here, and that must not blank the arrears table.
@@ -150,6 +170,14 @@ export default function Billing() {
       due: fromPaise(billedPaise - paidPaise),
     };
   }, [rows]);
+
+  // The mirror image of arrears. A flat that paid a round figure, or settled the year in
+  // April, is holding credit — and issuing its next invoice sets that credit against the
+  // bill automatically, so this list should shrink on its own rather than needing a
+  // button. It is here because a treasurer asked "whose money are we sitting on".
+  const inCredit = credits
+    .filter((row) => toPaise(row.advance) > 0n)
+    .sort((a, b) => (toPaise(b.advance) > toPaise(a.advance) ? 1 : -1));
 
   const withDue = rows
     .map((row) => ({ ...row, duePaise: toPaise(row.billed) - toPaise(row.paid) }))
@@ -213,6 +241,27 @@ export default function Billing() {
             </tr>
           );
         })}
+      </Ledger>
+
+      <Ledger
+        title="Flats in credit"
+        note="money the society is holding that has not met a bill yet"
+        head={["Flat", "Tower", "~Received", "~Applied", "~Held as credit", "~Still owed"]}
+        empty="No flat is in credit."
+        isEmpty={!loading && inCredit.length === 0}
+      >
+        {inCredit.map((row) => (
+          <tr key={row.unitId}>
+            <td className="strong">{row.unitNumber}</td>
+            <td className="muted">{row.towerName}</td>
+            <td className="num muted">{rupees(row.received)}</td>
+            <td className="num muted">{rupees(row.allocated)}</td>
+            <td className="num" data-tone="settled">
+              {rupees(row.advance)}
+            </td>
+            <td className="num muted">{rupees(row.outstanding)}</td>
+          </tr>
+        ))}
       </Ledger>
 
       <Ledger

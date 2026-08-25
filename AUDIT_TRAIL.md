@@ -678,3 +678,68 @@ balances, MG-6 budget vs actual, MG-7 asset register.
 > Independently verified: `pypdf` — installed into the scratchpad, never into this repo —
 > opens both documents, reads the metadata title, and extracts the text intact including
 > a society name containing brackets.
+
+---
+
+[2026-08-25 08:50 IST] — CREDIT BALANCES AND THE PENALTY REPORT (MG-11, MG-12)
+
+**WHAT:** `PaymentsService.creditBalances()` and `.applyAdvances()/.applyAdvancesIn()`,
+`GET /v1/payments/credits`, `POST /v1/payments/credits/apply`, a sweep inside
+`BillingService.issue`, `ReportsService.penalties()` behind `GET /v1/ledger/penalties`,
+and both surfaced in the console.
+
+**WHY:** This product could answer "who owes us" and could not answer "whom do we owe" —
+and a society always owes somebody. A flat pays a round ten thousand against seven
+thousand of bills; an owner settles the year in April. The money sat on the receipt
+unallocated, and next month's invoice went out marked fully outstanding to somebody whose
+money the society was already holding. Then a reminder followed.
+
+**HOW:** The ledger already had it right — `recordPayment` credits receivable 1200 for the
+whole receipt whether allocated or not, so the unit's account was genuinely in credit.
+Nothing showed it and nothing swept it. `creditBalances()` answers arrears and credit in
+one query rather than two, because they are the same number with a different sign and
+computing them separately is how they come to disagree.
+
+**The sweep posts no journal entry, and that is correct rather than an omission.** The
+receipt already debited bank and credited the unit's receivable when it was taken; an
+allocation records only *which* invoice a payment answers. Posting again would
+double-count the money — the exact bug that stops a set of books balancing, and the reason
+allocation lives in a sub-ledger. A smoke check runs the invariants after a sweep to prove
+it.
+
+**DESIGN:** The sweep runs in the *caller's* transaction, which is why it is split into
+`applyAdvancesIn(db, ...)` and a `tx()`-wrapping `applyAdvances()`. Under Neon's
+transaction-mode pooler a nested `tx()` is a different connection and a different
+transaction, so a failed sweep would have left the invoice issued and the credit stranded.
+Oldest receipt first and oldest due date first: the convention residents expect, and the
+one that minimises their own late fees — newest-first would quietly maximise the interest
+charged to our customers.
+
+Idempotent by construction rather than by a flag: it can only allocate what is unallocated
+to what is unpaid, so a second run finds nothing. That is asserted.
+
+The penalty report separates **charged** from **collected**, and prints the rule that
+produced the charges alongside them. A committee deciding whether to waive a fee needs to
+know which of the two it is looking at, and a late fee shown without its rule is the most
+common cause of a maintenance dispute — the arithmetic ends up being reconstructed by hand
+in a WhatsApp group. A part payment does not count as recovering the penalty: a receipt
+applies to the invoice as a whole, so the fee counts as collected only once the invoice is
+settled.
+
+**CODE:** `apps/api/src/modules/payments/payments.service.ts`
+(`creditBalances`, `applyAdvances`, `applyAdvancesIn`),
+`apps/api/src/modules/billing/billing.service.ts` (`issue`, now returning `creditApplied`),
+`apps/api/src/modules/ledger/reports.service.ts` (`penalties`).
+
+**MODEL:** L5
+
+**NEXT:** MG-6 budget vs actual by head, MG-7 asset register, then the gate block —
+MG-20 patrols, MG-21 kids checkout, MG-22 digital register, MG-26 offline emergency
+contacts.
+
+> Four checks I wrote failed on the first run, all four because they hard-coded the
+> answer: the July bill came to Rs. 4,554.50 against a Rs. 5,000 credit, so the sweep
+> applied the whole bill and left Rs. 445.50 — exactly right, and not what a test
+> asserting "5000 was applied" expects. Rewritten to assert the relationship rather than
+> the figure, which is the only form that survives a change to this society's charge
+> heads.

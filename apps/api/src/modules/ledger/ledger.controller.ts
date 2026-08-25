@@ -61,6 +61,13 @@ export class LedgerController {
     return this.reports.cashFlow(from, to);
   }
 
+  /** Late fees charged, recovered and still outstanding, with the rule that produced them. */
+  @Get("penalties")
+  async penalties(@Query("from") from?: string, @Query("to") to?: string) {
+    this.requireBooks();
+    return this.reports.penalties(from, to);
+  }
+
   @Get("day-book")
   async dayBook(
     @Query("from") from?: string,

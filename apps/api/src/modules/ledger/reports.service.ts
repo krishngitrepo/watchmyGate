@@ -420,6 +420,103 @@ export class ReportsService {
    * showing them inside general cash invites exactly the mistake that restriction exists
    * to prevent.
    */
+  /**
+   * The penalty report (MG-12).
+   *
+   * A late fee that appears as a number with no explanation is the most common cause of a
+   * maintenance dispute, and it always ends with a committee member reconstructing the
+   * arithmetic by hand in a WhatsApp group. So this answers all three questions at once:
+   * what rule was in force, which flats it charged, and whether the money was ever
+   * collected or is still sitting in arrears — because a penalty billed and never
+   * collected is a different fact from a penalty paid, and a committee deciding whether
+   * to waive one needs to know which it is looking at.
+   */
+  async penalties(from?: string, to?: string) {
+    const end = checkedDate(to, "to", today());
+    const start = checkedDate(from, "from", financialYearStart(end));
+
+    return tx(async (db) => {
+      const policy = rowsOf<{
+        effectiveFrom: string;
+        percentPerMonth: string;
+        graceDays: number;
+      }>(
+        await db.execute(sql`
+          SELECT effective_from::text                  AS "effectiveFrom",
+                 late_fee_percent_per_month::text      AS "percentPerMonth",
+                 grace_days                            AS "graceDays"
+          FROM gst_rules
+          WHERE effective_from <= ${end}
+          ORDER BY effective_from DESC
+          LIMIT 1
+        `),
+      )[0];
+
+      const rows = rowsOf(
+        await db.execute(sql`
+          SELECT
+            i.id,
+            i.invoice_number        AS "invoiceNumber",
+            i.unit_id               AS "unitId",
+            u.number                AS "unitNumber",
+            t.name                  AS "towerName",
+            i.issue_date::text      AS "issueDate",
+            i.due_date::text        AS "dueDate",
+            i.late_fee              AS "lateFee",
+            i.total,
+            i.status,
+            -- Charged is not collected. A receipt is applied to the invoice as a whole,
+            -- so a penalty counts as recovered only once the invoice it sits on is fully
+            -- settled; anything less would let a part payment look like it cleared the
+            -- fee when it cleared the maintenance instead.
+            (i.status = 'paid')     AS recovered
+          FROM invoices i
+          JOIN units u  ON u.id = i.unit_id
+          JOIN towers t ON t.id = u.tower_id
+          WHERE i.late_fee > 0
+            AND i.issue_date BETWEEN ${start} AND ${end}
+            AND i.status <> 'void'
+          ORDER BY i.late_fee DESC, i.issue_date DESC
+        `),
+      );
+
+      const totals = rowsOf<{
+        charged: string;
+        recovered: string;
+        outstanding: string;
+        flats: number;
+        invoices: number;
+      }>(
+        await db.execute(sql`
+          SELECT
+            COALESCE(sum(late_fee), 0)::text                                       AS charged,
+            COALESCE(sum(late_fee) FILTER (WHERE status = 'paid'), 0)::text        AS recovered,
+            COALESCE(sum(late_fee) FILTER (WHERE status <> 'paid'), 0)::text       AS outstanding,
+            count(DISTINCT unit_id)::int                                           AS flats,
+            count(*)::int                                                          AS invoices
+          FROM invoices
+          WHERE late_fee > 0
+            AND issue_date BETWEEN ${start} AND ${end}
+            AND status <> 'void'
+        `),
+      )[0];
+
+      return {
+        from: start,
+        to: end,
+        policy: policy ?? null,
+        totals: totals ?? {
+          charged: "0",
+          recovered: "0",
+          outstanding: "0",
+          flats: 0,
+          invoices: 0,
+        },
+        invoices: rows,
+      };
+    });
+  }
+
   async cashFlow(from?: string, to?: string) {
     const end = checkedDate(to, "to", today());
     const start = checkedDate(from, "from", financialYearStart(end));

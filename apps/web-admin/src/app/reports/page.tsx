@@ -89,11 +89,35 @@ type Tab = "money" | "gate" | "helpdesk" | "staff";
  * number in the ledger must come from the same place — recomputing in the browser is how
  * two screens start disagreeing about arrears, and how a treasurer stops trusting both.
  */
+interface PenaltyReport {
+  from: string;
+  to: string;
+  policy: { effectiveFrom: string; percentPerMonth: string; graceDays: number } | null;
+  totals: {
+    charged: string;
+    recovered: string;
+    outstanding: string;
+    flats: number;
+    invoices: number;
+  };
+  invoices: Array<{
+    id: string;
+    invoiceNumber: string;
+    unitNumber: string;
+    towerName: string;
+    dueDate: string;
+    lateFee: string;
+    total: string;
+    recovered: boolean;
+  }>;
+}
+
 export default function ReportsPage() {
   const [tab, setTab] = useState<Tab>("money");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [collections, setCollections] = useState<Collections | null>(null);
   const [defaulters, setDefaulters] = useState<Defaulter[]>([]);
+  const [penalties, setPenalties] = useState<PenaltyReport | null>(null);
   const [footfall, setFootfall] = useState<Footfall[]>([]);
   const [helpdesk, setHelpdesk] = useState<HelpdeskRow[]>([]);
   const [staff, setStaff] = useState<StaffRow[]>([]);
@@ -123,12 +147,14 @@ export default function ReportsPage() {
        * the page working rather than one 403 blanking everything.
        */
       try {
-        const [c, d] = await Promise.all([
+        const [c, d, pen] = await Promise.all([
           api.get<Collections[]>("/v1/analytics/collections"),
           api.get<Defaulter[]>("/v1/analytics/defaulters?limit=25"),
+          api.get<PenaltyReport>("/v1/ledger/penalties"),
         ]);
         setCollections(c[0] ?? null);
         setDefaulters(d);
+        setPenalties(pen);
         setMoneyDenied(false);
       } catch {
         setMoneyDenied(true);
@@ -462,6 +488,44 @@ export default function ReportsPage() {
           ))}
         </Ledger>
       ) : null}
+      {!moneyDenied && penalties && penalties.invoices.length > 0 ? (
+        <Ledger
+          title="Late payment charges"
+          note={
+            penalties.policy
+              ? `${penalties.policy.percentPerMonth}% a month after ${penalties.policy.graceDays} grace day${penalties.policy.graceDays === 1 ? "" : "s"} · ${shortDate(penalties.from)} onward`
+              : `${shortDate(penalties.from)} onward`
+          }
+          head={["Invoice", "Flat", "Due", "~Penalty", "~Invoice total", "Recovered"]}
+          empty="No late fee has been charged."
+          isEmpty={false}
+        >
+          {penalties.invoices.map((row) => (
+            <tr key={row.id}>
+              <td className="strong">{row.invoiceNumber}</td>
+              <td>
+                {row.unitNumber}
+                <span className="muted"> · {row.towerName}</span>
+              </td>
+              <td className="muted">{shortDate(row.dueDate)}</td>
+              <td className="num" data-tone={row.recovered ? undefined : "arrears"}>
+                {rupees(row.lateFee)}
+              </td>
+              <td className="num muted">{rupees(row.total)}</td>
+              <td>
+                {/* Charged is not collected, and a committee deciding whether to waive a
+                    fee needs to know which of the two it is looking at. */}
+                {row.recovered ? (
+                  <Chip tone="settled">collected</Chip>
+                ) : (
+                  <Chip tone="pending">still owed</Chip>
+                )}
+              </td>
+            </tr>
+          ))}
+        </Ledger>
+      ) : null}
+
     </Shell>
   );
 }
