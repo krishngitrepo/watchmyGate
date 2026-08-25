@@ -1646,3 +1646,62 @@ export const documents = pgTable(
     index("ix_document_unit").on(t.societyId, t.unitId),
   ],
 );
+
+// ----------------------------------------------------------------- budgets
+
+/**
+ * The annual budget a society passes at its AGM, head by head (MG-6).
+ *
+ * Two properties matter and both live in migration 0011. **Actuals are never stored
+ * here** — every actual is read from `journal_lines` at query time, because a budget
+ * table carrying its own copy of what was spent will drift from the ledger and leave the
+ * committee with two numbers and no way to tell which is the society's. And **an approved
+ * budget cannot be edited**: a budget a treasurer can quietly amend after the AGM is a
+ * running commentary, not a budget. A genuine change is a revision that supersedes.
+ *
+ * `financialYear` is the starting calendar year: 2026 means 1 Apr 2026 to 31 Mar 2027.
+ * The Indian financial year is statutory, so it is derived rather than configured.
+ */
+export const budgets = pgTable(
+  "budgets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    financialYear: integer("financial_year").notNull(),
+    title: varchar("title", { length: 160 }).notNull(),
+    notes: text("notes"),
+    /** `draft` | `approved` | `superseded`. Approval is one-way, by trigger. */
+    status: varchar("status", { length: 16 }).notNull().default("draft"),
+    approvedBy: uuid("approved_by"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    /** The AGM or committee resolution it was passed under. */
+    approvedRef: varchar("approved_ref", { length: 160 }),
+    supersedesId: uuid("supersedes_id"),
+    version: integer("version").notNull().default(1),
+    createdBy: uuid("created_by"),
+    ...timestamps,
+  },
+  (t) => [index("ix_budget_society").on(t.societyId, t.financialYear)],
+);
+
+export const budgetLines = pgTable(
+  "budget_lines",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    budgetId: uuid("budget_id")
+      .notNull()
+      .references(() => budgets.id, { onDelete: "cascade" }),
+    /** Against a ledger head, never free text — an unmatched line can have no actual. */
+    accountId: uuid("account_id")
+      .notNull()
+      .references(() => ledgerAccounts.id),
+    annualAmount: money("annual_amount").notNull().default("0"),
+    notes: text("notes"),
+  },
+  (t) => [index("ix_budget_line_budget").on(t.budgetId)],
+);

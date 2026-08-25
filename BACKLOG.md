@@ -5,9 +5,9 @@ conservative: **Done** means it exists *and* is proven by a test that would fail
 broke. Code that exists but has never been exercised against the real dependency is
 **Unproven**, not Done — that distinction is the whole point of this file.
 
-Counts as of the last update: **431 TypeScript tests** (db 238, money 66, api 114,
+Counts as of the last update: **440 TypeScript tests** (db 247, money 66, api 114,
 worker 13), **81 Dart tests** (guard 61, resident 20), **30 Python tests**, **45
-end-to-end checks**, **35 Phase 2 smoke checks** and **183 console smoke checks** — all
+end-to-end checks**, **35 Phase 2 smoke checks** and **208 console smoke checks** — all
 green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
@@ -230,7 +230,7 @@ pages*, not missing foundations, which is why they rank first.
 | MG-3 | House statement across financial years | Pro | **Done** | |
 | MG-4 | Cash and fund flow report | Pro | **Done** | |
 | MG-5 | Invoice and receipt PDFs | Pro | **Done** | Hand-written PDF writer, no dependency, ~3 KB a document; amount in words; a resident gets their own flat's and nobody else's |
-| MG-6 | Budget vs actual by head | Pro | Todo | Asked for loudly, once a year, at the AGM |
+| MG-6 | Budget vs actual by head | Pro | **Done** | Approved budgets frozen by trigger; the drafter cannot pass it; unbudgeted spend is on the report |
 | MG-7 | Asset and inventory register | Pro | Todo | Category, location, condition, audit export. On every RFP |
 | MG-8 | PR/PO with multi-level approval chain | Pro | Todo | Where MyGate's ERP differentiation actually lives |
 | MG-9 | Vendor bills and payment history | Pro | Todo | |

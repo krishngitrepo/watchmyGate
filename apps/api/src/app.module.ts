@@ -27,6 +27,7 @@ import { GateService } from "./modules/gate/gate.service.js";
 import { HelpdeskController } from "./modules/helpdesk/helpdesk.controller.js";
 import { InternalController } from "./modules/internal/internal.controller.js";
 import { HelpdeskService } from "./modules/helpdesk/helpdesk.service.js";
+import { BudgetService } from "./modules/ledger/budget.service.js";
 import { LedgerController } from "./modules/ledger/ledger.controller.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { ReportsService } from "./modules/ledger/reports.service.js";
@@ -81,6 +82,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     PrivacyService,
     BillingService,
     BillingDocumentsService,
+    BudgetService,
     HelpdeskService,
     GateService,
     ApprovalService,

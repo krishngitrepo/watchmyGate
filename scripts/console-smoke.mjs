@@ -85,13 +85,14 @@ async function tokenFor(phone, societyId) {
   return scoped.body?.accessToken ?? "";
 }
 
-async function callAs(as, method, path) {
+async function callAs(as, method, path, body) {
   const res = await fetch(`${BASE}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
       ...(as ? { Authorization: `Bearer ${as}` } : {}),
     },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const text = await res.text();
   let json;
@@ -1254,6 +1255,167 @@ async function main() {
     "a resident cannot read the penalty report",
     herPenalties.status === 403,
     `expected 403, got ${herPenalties.status}`,
+  );
+
+  // ------------------------------------------------------------------ budgets
+  console.log("");
+  console.log("--- Budget and variance ---");
+
+  const accounts = await call("GET", "/v1/ledger/accounts");
+  check("chart of accounts for the budget form", ok(accounts), why(accounts));
+  const expenseHeads = (accounts.body?.accounts ?? accounts.body ?? []).filter(
+    (a) => a.type === "expense",
+  );
+  check("there are expense heads to budget against", expenseHeads.length > 0, "none found");
+
+  // Only one live budget is allowed per financial year, by unique index — so each run
+  // takes the next free year rather than fighting the constraint the product depends on.
+  const existingBudgets = await call("GET", "/v1/ledger/budgets");
+  check("budget list", ok(existingBudgets), why(existingBudgets));
+  const testYear =
+    Math.max(2089, ...(existingBudgets.body ?? []).map((b) => b.financialYear)) + 1;
+
+  const draft = await call("POST", "/v1/ledger/budgets", {
+    financialYear: testYear,
+    title: `Console budget ${stamp}`,
+    notes: "Raised by the console smoke run.",
+    lines: expenseHeads.slice(0, 3).map((a, i) => ({
+      accountId: a.id,
+      annualAmount: `${(i + 1) * 120000}.00`,
+      notes: `Head ${a.code}`,
+    })),
+  });
+  check("draft a budget", ok(draft), why(draft));
+  const budgetId = draft.body?.id;
+
+  const second = await call("POST", "/v1/ledger/budgets", {
+    financialYear: testYear,
+    title: "A second budget for the same year",
+    lines: [],
+  });
+  check(
+    "a second live budget for the same year is refused",
+    second.status === 409,
+    `expected 409, got ${second.status}`,
+  );
+
+  // The control that makes a budget a decision rather than a memo: the person who wrote
+  // it cannot be the person who passes it. The admin drafted this one.
+  const selfApprove = await call("POST", `/v1/ledger/budgets/${budgetId}/approve`, {
+    resolutionRef: "AGM 2026-08-25",
+  });
+  check(
+    "the person who drafted a budget cannot pass it",
+    selfApprove.status === 403,
+    `expected 403, got ${selfApprove.status}`,
+  );
+
+  const vikram = await tokenFor("+919900000005", societyId);
+  const noReason = await callAs(vikram, "POST", `/v1/ledger/budgets/${budgetId}/approve`, {
+    resolutionRef: "ok",
+  });
+  check(
+    "passing a budget needs the resolution it was passed under",
+    noReason.status === 400 || noReason.status === 422,
+    `expected a refusal, got ${noReason.status}`,
+  );
+
+  const passed = await callAs(vikram, "POST", `/v1/ledger/budgets/${budgetId}/approve`, {
+    resolutionRef: `AGM resolution ${stamp}`,
+  });
+  check("another committee member passes it", ok(passed), why(passed));
+
+  // The freeze is a database trigger, not a service check — so this must fail even though
+  // the caller has every role the endpoint asks for.
+  const editApproved = await call("POST", `/v1/ledger/budgets/${budgetId}/lines`, {
+    lines: [{ accountId: expenseHeads[0].id, annualAmount: "999999.00" }],
+  });
+  check(
+    "an approved budget cannot be edited, even by an admin",
+    editApproved.status >= 400,
+    `expected a refusal, got ${editApproved.status}`,
+  );
+
+  const variance = await call("GET", `/v1/ledger/budgets/variance?year=${testYear}`);
+  check("variance report", ok(variance), why(variance));
+  check(
+    "it names the year the way a committee says it",
+    variance.body?.label === `${testYear}-${String((testYear + 1) % 100).padStart(2, "0")}`,
+    variance.body?.label,
+  );
+  check(
+    "it says how far through the year we are, not just how much is spent",
+    typeof variance.body?.yearElapsedPercent === "string",
+    "no elapsed figure — 60% of the budget means nothing without it",
+  );
+  check(
+    "the budgeted total is the sum of the lines",
+    toPaise(variance.body?.totals?.expenditureBudgeted) === 12000000n + 24000000n + 36000000n,
+    `expenditureBudgeted was ${variance.body?.totals?.expenditureBudgeted}`,
+  );
+  check(
+    "every budgeted head appears on the report",
+    (variance.body?.expenditure ?? []).filter((r) => toPaise(r.budgeted) > 0n).length === 3,
+    JSON.stringify((variance.body?.expenditure ?? []).map((r) => r.code)),
+  );
+  check(
+    "a head with nothing budgeted reports no percentage rather than zero",
+    (variance.body?.income ?? [])
+      .concat(variance.body?.expenditure ?? [])
+      .every((r) => toPaise(r.budgeted) > 0n || r.percentUsed === null),
+    "0% consumed of a head that was never budgeted is a lie",
+  );
+  // The test year above is far enough out that no journal entry falls in it, so the
+  // "spent but never budgeted" row has to be proven against the year that has real
+  // postings in it. That is the row an auditor asks about and a report walking only the
+  // budget lines cannot show.
+  const thisYear = await call("GET", "/v1/ledger/budgets/variance");
+  check("variance for the current financial year", ok(thisYear), why(thisYear));
+  const live = (thisYear.body?.income ?? []).concat(thisYear.body?.expenditure ?? []);
+  check(
+    "heads with real postings appear on it",
+    live.some((r) => toPaise(r.actual) !== 0n),
+    "no actuals at all — the ledger has postings, so this is wrong",
+  );
+  check(
+    "spending nobody budgeted for is on the report, flagged",
+    live.some((r) => r.unbudgeted === true && toPaise(r.actual) !== 0n),
+    "the row an auditor asks about is missing",
+  );
+  check(
+    "and it is counted, so the committee sees there is something to look at",
+    thisYear.body?.unbudgetedHeads > 0,
+    `unbudgetedHeads was ${thisYear.body?.unbudgetedHeads}`,
+  );
+
+  const revised = await call("POST", `/v1/ledger/budgets/${budgetId}/revise`);
+  check("raise a revision", ok(revised), why(revised));
+  check("the revision is version 2", revised.body?.version === 2, JSON.stringify(revised.body));
+
+  const afterRevision = await call("GET", "/v1/ledger/budgets");
+  const oldOne = (afterRevision.body ?? []).find((b) => b.id === budgetId);
+  const newOne = (afterRevision.body ?? []).find((b) => b.id === revised.body?.id);
+  check(
+    "the passed budget is superseded, not deleted",
+    oldOne?.status === "superseded",
+    `status was ${oldOne?.status}`,
+  );
+  check(
+    "the revision starts as a draft carrying the same heads",
+    newOne?.status === "draft" && newOne?.lineCount === 3,
+    JSON.stringify(newOne),
+  );
+  check(
+    "and it points back at what it replaced",
+    newOne?.supersedesId === budgetId,
+    `supersedesId was ${newOne?.supersedesId}`,
+  );
+
+  const herBudgets = await callAs(priya, "GET", "/v1/ledger/budgets");
+  check(
+    "a resident cannot read the society's budget",
+    herBudgets.status === 403,
+    `expected 403, got ${herBudgets.status}`,
   );
 
   // -------------------------------------------------------------- the rail

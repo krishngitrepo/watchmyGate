@@ -743,3 +743,73 @@ contacts.
 > asserting "5000 was applied" expects. Rewritten to assert the relationship rather than
 > the figure, which is the only form that survives a change to this society's charge
 > heads.
+
+---
+
+[2026-08-25 08:58 IST] — BUDGET AND VARIANCE (MG-6)
+
+**WHAT:** Migration `0011_budgets.sql` (`budgets`, `budget_lines`, two triggers, RLS),
+`BudgetService`, five endpoints under `/v1/ledger/budgets`, and a new console page at
+`/budget/`.
+
+**WHY:** A society passes an annual budget at its AGM, head by head, and then spends the
+year wanting to know one thing: are we inside it. Today that lives in a spreadsheet on the
+treasurer's laptop and leaves with them when the committee turns over — which is the same
+failure the document repository was built for, applied to money.
+
+**HOW — the two things it deliberately does not do.**
+
+**It does not store actuals.** Every actual is read from `journal_lines` at query time. A
+budget table carrying its own copy of what was spent drifts from the ledger, and the
+moment it does the committee has two numbers and no way to tell which one is the
+society's. This page and the Income & Expenditure statement therefore cannot disagree.
+
+**It does not let an approved budget be edited.** `budget_lines_frozen_when_approved()` is
+a trigger, not a service check, because a control that only holds while the calling code
+is correct is not a control — the smoke test proves an admin with every role the endpoint
+asks for still cannot edit a passed budget. Approval is also one-way: draft → approved →
+superseded, never back, because "unapprove, edit, re-approve" is the same edit taken the
+long way round. A real change is a **revision** that supersedes and starts as a copy of
+what it replaces — a revision that made you retype forty heads is one nobody raises, and
+the committee would edit the old one instead.
+
+**DESIGN:** *The person who drafted a budget cannot pass it.* A budget where the treasurer
+both writes and approves is not a committee decision, it is a memo. Same rule as reopening
+a locked accounting period, and passing one requires the resolution it was passed under to
+be recorded.
+
+*The variance report includes heads that were spent on but never budgeted*, flagged. A
+report that only walks the budget lines answers "did we overspend what we planned" and
+misses "what did we spend that we never planned at all" — the more interesting question,
+and the first one an auditor asks. Those rows report `percentUsed` as **null rather than
+zero**: 0% consumed of a head that was never budgeted is a lie, and it is the row that
+matters most.
+
+*The report also states how far through the year we are.* "62% of the maintenance head is
+gone" is alarming in June and unremarkable in February. Showing consumption without the
+elapsed year invites the wrong reaction at an AGM.
+
+One unique index does real work: `uq_budget_year_live` allows only one budget per
+financial year in `draft` or `approved`. Superseded ones fall out of it, so history
+accumulates without "the budget" ever stopping being a thing anyone can point at.
+
+**CODE:** `packages/db/migrations/0011_budgets.sql`,
+`apps/api/src/modules/ledger/budget.service.ts`,
+`apps/web-admin/src/app/budget/page.tsx`.
+
+**MODEL:** L5
+
+**NEXT:** MG-7 asset and inventory register, then the gate block — MG-20 patrols, MG-21
+kids checkout, MG-22 digital register, MG-26 offline emergency contacts.
+
+> Ten checks failed on the first run and all ten were one defect in the *test harness*:
+> `callAs` did not forward a request body, so passing the budget arrived with no
+> resolution reference and everything downstream cascaded off a budget that was still a
+> draft. Worth noting because the ten red lines looked like a broken feature and were a
+> missing parameter.
+>
+> The eleventh was real and more interesting: the test picks an unused far-future
+> financial year so reruns do not collide with the one-live-budget-per-year index — which
+> means no journal entry ever falls inside it, so "spent but never budgeted" could not
+> appear. That row is now proven against the current financial year, which has real
+> postings in it.

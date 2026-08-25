@@ -20,8 +20,22 @@ import { schema } from "@watchmygate/db";
 import { ForbiddenError, NotFoundError } from "../../common/errors.js";
 import { currentContext, hasRole, tx } from "../../common/tenant-context.js";
 import { LedgerService } from "./ledger.service.js";
+import { BudgetService } from "./budget.service.js";
 import { ReportsService } from "./reports.service.js";
 import { TallyService } from "./tally.service.js";
+
+const budgetLineSchema = z.object({
+  accountId: z.string().uuid(),
+  annualAmount: z.string().regex(/^\d+(\.\d{1,4})?$/, "Amounts are decimal strings"),
+  notes: z.string().max(500).optional(),
+});
+
+const budgetSchema = z.object({
+  financialYear: z.number().int().min(2000).max(2100),
+  title: z.string().min(1).max(160),
+  notes: z.string().max(2000).optional(),
+  lines: z.array(budgetLineSchema).default([]),
+});
 
 @Controller("v1/ledger")
 export class LedgerController {
@@ -29,6 +43,7 @@ export class LedgerController {
     private readonly ledger: LedgerService,
     private readonly reports: ReportsService,
     private readonly tally: TallyService,
+    private readonly budgets: BudgetService,
   ) {}
 
   @Get("accounts")
@@ -152,6 +167,49 @@ export class LedgerController {
       from ?? financialYearStart(),
       to ?? new Date().toISOString().slice(0, 10),
     );
+  }
+
+  // --------------------------------------------------------------- budgets
+
+  @Get("budgets")
+  async budgetList() {
+    this.requireBooks();
+    return this.budgets.list();
+  }
+
+  /**
+   * Budget against actual, head by head.
+   *
+   * Includes heads spent on but never budgeted, which is the row an auditor asks about
+   * and a report that only walks the budget lines cannot show.
+   */
+  @Get("budgets/variance")
+  async budgetVariance(@Query("year") year?: string, @Query("asOf") asOf?: string) {
+    this.requireBooks();
+    return this.budgets.variance(year ? Number(year) : undefined, asOf);
+  }
+
+  @Post("budgets")
+  async createBudget(@Body() body: unknown) {
+    return this.budgets.create(budgetSchema.parse(body));
+  }
+
+  @Post("budgets/:id/lines")
+  async setBudgetLines(@Param("id") id: string, @Body() body: unknown) {
+    const input = z.object({ lines: z.array(budgetLineSchema) }).parse(body);
+    return this.budgets.setLines(id, input.lines);
+  }
+
+  /** Passing a budget is a committee act, and not by whoever drafted it. */
+  @Post("budgets/:id/approve")
+  async approveBudget(@Param("id") id: string, @Body() body: unknown) {
+    const input = z.object({ resolutionRef: z.string().min(4).max(160) }).parse(body);
+    return this.budgets.approve(id, input.resolutionRef);
+  }
+
+  @Post("budgets/:id/revise")
+  async reviseBudget(@Param("id") id: string) {
+    return this.budgets.revise(id);
   }
 
   @Get("invariants")
