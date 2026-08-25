@@ -47,6 +47,7 @@ const SECTIONS: {
       { href: "/complaints/", label: "Complaints" },
       { href: "/notices/", label: "Notices & Polls" },
       { href: "/amenities/", label: "Amenities" },
+      { href: "/documents/", label: "Documents" },
     ],
   },
   {

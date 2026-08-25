@@ -30,6 +30,7 @@ import { LedgerController } from "./modules/ledger/ledger.controller.js";
 import { LedgerService } from "./modules/ledger/ledger.service.js";
 import { ReportsService } from "./modules/ledger/reports.service.js";
 import { TallyService } from "./modules/ledger/tally.service.js";
+import { DocumentsController } from "./modules/documents/documents.controller.js";
 import { PrivacyController } from "./modules/privacy/privacy.controller.js";
 import { PrivacyService } from "./modules/privacy/privacy.service.js";
 import { PaymentsController } from "./modules/payments/payments.controller.js";
@@ -66,6 +67,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     MigrationController,
     LedgerController,
     PrivacyController,
+    DocumentsController,
   ],
   providers: [
     AuthService,

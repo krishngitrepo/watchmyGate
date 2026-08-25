@@ -1591,3 +1591,58 @@ export const retentionRuns = pgTable(
   },
   (t) => [index("ix_retention_run").on(t.societyId, t.ranAt)],
 );
+
+/**
+ * The document repository — MG-30, and rental agreements (MG-32) as a category of it.
+ *
+ * Every society keeps the same shelf of paper: bye-laws, registration certificate, AGM
+ * minutes, audited accounts, insurance, AMC contracts. Today it lives in one secretary's
+ * WhatsApp and leaves with them when the committee turns over — that is the problem
+ * being solved, not storage.
+ *
+ * Built on the existing attachment machinery: bytes go to R2 by presigned URL and never
+ * through the API. Controls in migration 0010.
+ */
+export const documents = pgTable(
+  "documents",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    societyId: uuid("society_id")
+      .notNull()
+      .references(() => societies.id),
+    title: varchar("title", { length: 200 }).notNull(),
+    category: varchar("category", { length: 40 }).notNull(),
+    description: text("description"),
+
+    /** Null while a document is recorded as existing but not yet scanned. */
+    r2Key: varchar("r2_key", { length: 500 }),
+    contentType: varchar("content_type", { length: 120 }),
+    bytes: integer("bytes"),
+
+    /**
+     * `society` | `committee` | `unit`.
+     *
+     * An AGM minute is for everyone; a vendor contract with rates in it is committee
+     * only; a rental agreement belongs to one flat. Without the distinction a secretary
+     * keeps the sensitive half on WhatsApp exactly as before.
+     */
+    visibility: varchar("visibility", { length: 16 }).notNull().default("society"),
+    unitId: uuid("unit_id"),
+
+    /** Versioning by supersession. An audited account that can be swapped is not one. */
+    version: integer("version").notNull().default(1),
+    supersedesId: uuid("supersedes_id"),
+
+    effectiveFrom: date("effective_from"),
+    /** An insurance policy that lapsed in March is worse than none — everyone believes
+     * there is cover. The console counts down against this. */
+    expiresOn: date("expires_on"),
+
+    uploadedBy: uuid("uploaded_by"),
+    ...timestamps,
+  },
+  (t) => [
+    index("ix_document_society").on(t.societyId, t.category),
+    index("ix_document_unit").on(t.societyId, t.unitId),
+  ],
+);

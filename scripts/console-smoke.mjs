@@ -866,6 +866,71 @@ async function main() {
   );
 
 
+  // ----------------------------------------------------------- documents
+  console.log("");
+  console.log("--- Documents ---");
+
+  const byeLaws = await call("POST", "/v1/documents", {
+    title: `Bye-laws ${stamp}`,
+    category: "bye_laws",
+    visibility: "society",
+  });
+  check("a document can be recorded", ok(byeLaws), why(byeLaws));
+
+  const policy = await call("POST", "/v1/documents", {
+    title: `Insurance ${stamp}`,
+    category: "insurance",
+    visibility: "committee",
+    expiresOn: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
+  });
+  check("an expiring document can be recorded", ok(policy), why(policy));
+
+  const docs = await call("GET", "/v1/documents");
+  check("documents list", ok(docs) && Array.isArray(docs.body), why(docs));
+  const listed = (docs.body ?? []).find((d) => d.id === policy.body?.id);
+  check(
+    "days to expiry is computed server-side",
+    typeof listed?.daysToExpiry === "number",
+    JSON.stringify(listed?.daysToExpiry),
+  );
+  check(
+    "a document with no file says so rather than pretending",
+    listed?.hasFile === false,
+    JSON.stringify(listed?.hasFile),
+  );
+
+  const expiring = await call("GET", "/v1/documents/expiring");
+  check("what is about to lapse is answerable", ok(expiring), why(expiring));
+
+  // A flat-scoped document with no flat would fall through the visibility check into
+  // being readable by the whole society.
+  const unscoped = await call("POST", "/v1/documents", {
+    title: "Rental agreement",
+    category: "rental_agreement",
+    visibility: "unit",
+  });
+  check("a flat document without a flat is refused", unscoped.status === 404, why(unscoped));
+
+  const superseding = await call("POST", "/v1/documents", {
+    title: `Bye-laws ${stamp} amended`,
+    category: "bye_laws",
+    visibility: "society",
+    supersedesId: byeLaws.body?.id,
+  });
+  check("a document can supersede another", ok(superseding), why(superseding));
+  const afterSupersede = await call("GET", "/v1/documents");
+  check(
+    "the superseded one is marked, not removed",
+    (afterSupersede.body ?? []).find((d) => d.id === byeLaws.body?.id)?.superseded === true,
+    "superseded flag",
+  );
+  check(
+    "the replacement carries the next version number",
+    (afterSupersede.body ?? []).find((d) => d.id === superseding.body?.id)?.version === 2,
+    "version",
+  );
+
+
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");
 
