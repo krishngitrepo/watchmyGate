@@ -20,6 +20,7 @@ import { AuthController } from "./modules/auth/auth.controller.js";
 import { AuthService } from "./modules/auth/auth.service.js";
 import { BillingController } from "./modules/billing/billing.controller.js";
 import { BillingService } from "./modules/billing/billing.service.js";
+import { BillingDocumentsService } from "./modules/billing/documents.service.js";
 import { ApprovalService } from "./modules/gate/approval.service.js";
 import { GateController } from "./modules/gate/gate.controller.js";
 import { GateService } from "./modules/gate/gate.service.js";
@@ -79,6 +80,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     TallyService,
     PrivacyService,
     BillingService,
+    BillingDocumentsService,
     HelpdeskService,
     GateService,
     ApprovalService,

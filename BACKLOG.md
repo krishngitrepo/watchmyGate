@@ -5,9 +5,9 @@ conservative: **Done** means it exists *and* is proven by a test that would fail
 broke. Code that exists but has never been exercised against the real dependency is
 **Unproven**, not Done — that distinction is the whole point of this file.
 
-Counts as of the last update: **377 TypeScript tests** (db 223, money 55, api 86,
-worker 13), **77 Dart tests** (guard 57, resident 20), **30 Python tests**, **45
-end-to-end checks**, **35 Phase 2 smoke checks** and **93 console smoke checks** — all
+Counts as of the last update: **431 TypeScript tests** (db 238, money 66, api 114,
+worker 13), **81 Dart tests** (guard 61, resident 20), **30 Python tests**, **45
+end-to-end checks**, **35 Phase 2 smoke checks** and **163 console smoke checks** — all
 green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
@@ -225,19 +225,19 @@ pages*, not missing foundations, which is why they rank first.
 
 | ID | Task | Plan | Status | Notes |
 |---|---|---|---|---|
-| MG-1 | Trial balance, P&L, balance sheet | Pro | Todo | Derivable from `journal_lines` today. Highest value per hour in the whole backlog |
-| MG-2 | **Tally-compatible export** | Pro | Todo | Import brings a society in; export is what lets their accountant keep working. Withholding it is a lock-in tactic that also loses deals |
-| MG-3 | House statement across financial years | Pro | Todo | MyGate ships multi-FY consolidated download |
-| MG-4 | Cash and fund flow report | Pro | Todo | |
-| MG-5 | Invoice and receipt PDFs | Pro | Todo | A resident who cannot download a receipt does not believe they paid |
+| MG-1 | Trial balance, Income & Expenditure, balance sheet | Pro | **Done** | Proven arithmetically against live Neon, not asserted |
+| MG-2 | **Tally-compatible export** | Pro | **Done** | Import brings a society in; export is what lets their accountant keep working. Withholding it is a lock-in tactic that also loses deals |
+| MG-3 | House statement across financial years | Pro | **Done** | |
+| MG-4 | Cash and fund flow report | Pro | **Done** | |
+| MG-5 | Invoice and receipt PDFs | Pro | **Done** | Hand-written PDF writer, no dependency, ~3 KB a document; amount in words; a resident gets their own flat's and nobody else's |
 | MG-6 | Budget vs actual by head | Pro | Todo | Asked for loudly, once a year, at the AGM |
 | MG-7 | Asset and inventory register | Pro | Todo | Category, location, condition, audit export. On every RFP |
 | MG-8 | PR/PO with multi-level approval chain | Pro | Todo | Where MyGate's ERP differentiation actually lives |
 | MG-9 | Vendor bills and payment history | Pro | Todo | |
 | MG-10 | Security deposits — collect, hold, reverse | Pro | Todo | MyGate ties this to amenity bookings |
 | MG-11 | Advance and credit balances per flat | Pro | Todo | We track dues; a flat in credit is not modelled |
-| MG-12 | Penalty report + invoice-footer penalty summary | Pro | Todo | Cheap, and it prevents disputes |
-| MG-13 | Period lock / audit lock by financial year | Pro | Todo | In the plan, unbuilt. Their framing is right: finalised data cannot be tampered with |
+| MG-12 | Penalty report + invoice-footer penalty summary | Pro | Partial | Footer done: the charge is printed next to the rule that produced it. The report is next |
+| MG-13 | Period lock / audit lock by financial year | Pro | **Done** | Reopening needs a second person and a stated reason |
 | MG-14 | GST returns, e-invoicing, TDS 194C/194J, Form 26Q | Pro | Todo | |
 | MG-15 | Slab-based penalty configuration | Pro | Partial | We have one percentage per month, not slabs |
 | MG-16 | Bulk payout report — one bank entry per day | Pro | Todo | Depends on Razorpay settlement reporting |
@@ -252,21 +252,21 @@ pages*, not missing foundations, which is why they rank first.
 | MG-20 | **Guard patrolling** with geofenced check-ins | Basic | Todo | The first thing a security agency asks about |
 | MG-21 | **Kids checkout** — child leaves, guardian approves | Basic | Todo | Small, emotionally central to parents, clean in a demo |
 | MG-22 | Digital register replacing the gate book, Excel export | Basic | Todo | Named specifically for trucks in the sales notes |
-| MG-23 | **Animated QR / screenshot protection** | Basic | Todo | Closes a real hole in our own pass design — a forwarded screenshot currently works |
+| MG-23 | **Animated QR / screenshot protection** | Basic | **Done** | v2 rolling proof, 30 s step, +/-1 tolerance. A forwarded screenshot stops working. The resident app does not yet generate its keypair |
 | MG-24 | Frequent-visitor list and one-click re-invite | Basic | Partial | Passes exist; "invite my regulars again" does not |
 | MG-25 | Visitor photo in the approval notification | Basic | Partial | Capture is designed; not wired to push |
 | MG-26 | Offline emergency contact directory | Basic | Todo | Must work with no network, like the passes |
 | MG-27 | e-Intercom — resident↔resident, resident↔guard, guard↔resident | Basic | Todo | The daily interaction. Needs a voice provider |
 | MG-28 | Guest parking allotment | Basic | Partial | Slot kind exists; no guest flow |
-| MG-29 | Entry/exit retention policy — purge after 6 months | Basic | Todo | Matches MyGate, and it is a DPDP obligation, so it counts twice |
+| MG-29 | Entry/exit retention policy — purge after 6 months | Basic | **Done** | Retention policy table plus a purge that actually runs |
 
 ### The community gaps — Basic
 
 | ID | Task | Plan | Status | Notes |
 |---|---|---|---|---|
-| MG-30 | **Document repository** — bye-laws, minutes, audited accounts | Basic | Todo | Trivial on the attachment machinery that already exists |
+| MG-30 | **Document repository** — bye-laws, minutes, audited accounts | Basic | **Done** | Visibility is the design: society / committee / one flat, filtered in SQL |
 | MG-31 | Move-in / move-out workflow with approvals and document collection | Basic | Partial | Occupancy in/out done; the workflow, dues clearance and NOC are not |
-| MG-32 | Rental agreement storage with expiry status | Basic | Todo | |
+| MG-32 | Rental agreement storage with expiry status | Basic | **Done** | A category on the repository, not a second system |
 | MG-33 | Surveys — several questions, not one | Basic | Partial | Polls hold a single question |
 | MG-34 | Elections — candidates, turnout report, result/turnout split | Basic | Partial | Voting works; the election apparatus does not |
 | MG-35 | AGM scheduling, agenda, minutes, quorum | Basic | Todo | |

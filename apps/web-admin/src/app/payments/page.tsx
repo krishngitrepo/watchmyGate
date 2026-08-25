@@ -15,7 +15,7 @@ import {
   Shell,
   useAction,
 } from "../../components/Shell";
-import { api, can, rupees, shortDate } from "../../lib/api";
+import { api, can, download, rupees, shortDate } from "../../lib/api";
 
 interface Destination {
   id: string;
@@ -42,6 +42,19 @@ interface Unit {
   towerName: string;
 }
 
+interface Receipt {
+  id: string;
+  receiptNumber: string;
+  unitId: string | null;
+  unitNumber: string | null;
+  towerName: string | null;
+  receivedOn: string;
+  amount: string;
+  method: string;
+  verified: boolean;
+  allocated: string;
+}
+
 const METHODS = ["upi", "neft", "cheque", "cash", "card", "netbanking"] as const;
 
 /**
@@ -60,6 +73,7 @@ export default function PaymentsPage() {
   const [destinations, setDestinations] = useState<Destination[]>([]);
   const [outstanding, setOutstanding] = useState<Outstanding[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [recording, setRecording] = useState(false);
@@ -71,13 +85,15 @@ export default function PaymentsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [dest, dues, unitList] = await Promise.all([
+      const [dest, dues, unitList, receiptList] = await Promise.all([
         api.get<Destination[]>("/v1/payments/destinations"),
         api.get<Outstanding[]>("/v1/payments/outstanding"),
         api.get<Unit[]>("/v1/society/units"),
+        api.get<Receipt[]>("/v1/billing/receipts"),
       ]);
       setDestinations(dest);
       setOutstanding(dues);
+      setReceipts(receiptList);
       setUnits(unitList);
     } catch (err) {
       setError((err as Error).message);
@@ -194,6 +210,56 @@ export default function PaymentsPage() {
               <td className="muted">{shortDate(row.oldestDue)}</td>
             </tr>
           ))}
+      </Ledger>
+
+      <Ledger
+        title="Receipts"
+        note="what a resident can download as proof"
+        head={["Receipt", "Flat", "Received", "Method", "~Amount", "~Applied", "PDF"]}
+        empty="No payment has been recorded yet."
+        isEmpty={!loading && receipts.length === 0}
+      >
+        {receipts.map((receipt) => (
+          <tr key={receipt.id}>
+            <td className="strong">
+              {receipt.receiptNumber}
+              {/* A manually keyed reference is a claim until the bank confirms it, and
+                  the receipt PDF says so too. Hiding the distinction here would let an
+                  accountant treat an unconfirmed NEFT as settled money. */}
+              {receipt.verified ? null : <span className="sub">unconfirmed</span>}
+            </td>
+            <td>
+              {receipt.unitNumber ? (
+                <>
+                  {receipt.unitNumber}
+                  <span className="muted"> · {receipt.towerName}</span>
+                </>
+              ) : (
+                <span className="muted">Society</span>
+              )}
+            </td>
+            <td className="muted">{shortDate(receipt.receivedOn)}</td>
+            <td>
+              <Chip tone="quiet">{receipt.method.replace(/_/g, " ")}</Chip>
+            </td>
+            <td className="num">{rupees(receipt.amount)}</td>
+            <td className="num muted">
+              {toPaise(receipt.allocated) === 0n ? "advance" : rupees(receipt.allocated)}
+            </td>
+            <td>
+              <button
+                onClick={() =>
+                  void download(
+                    `/v1/billing/receipts/${receipt.id}/pdf`,
+                    `receipt-${receipt.receiptNumber}.pdf`,
+                  )
+                }
+              >
+                Download
+              </button>
+            </td>
+          </tr>
+        ))}
       </Ledger>
 
       <section className="card settle">

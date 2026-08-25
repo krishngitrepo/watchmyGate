@@ -15,7 +15,7 @@ import {
   Shell,
   useAction,
 } from "../../components/Shell";
-import { api, can, rupees, shortDate } from "../../lib/api";
+import { api, can, download, rupees, shortDate } from "../../lib/api";
 
 interface Outstanding {
   unitId: string;
@@ -51,6 +51,21 @@ interface Preview {
   gstApplied: boolean;
 }
 
+interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  unitId: string;
+  unitNumber: string;
+  towerName: string;
+  periodStart: string;
+  periodEnd: string;
+  dueDate: string;
+  total: string;
+  balance: string;
+  status: string;
+  overdue: boolean;
+}
+
 interface ChargeType {
   code: string;
   name: string;
@@ -75,6 +90,7 @@ export default function Billing() {
   const [rows, setRows] = useState<Outstanding[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [charges, setCharges] = useState<ChargeType[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [billing, setBilling] = useState(false);
@@ -85,12 +101,14 @@ export default function Billing() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [dues, unitList] = await Promise.all([
+      const [dues, unitList, invoiceList] = await Promise.all([
         api.get<Outstanding[]>("/v1/payments/outstanding"),
         api.get<Unit[]>("/v1/society/units"),
+        api.get<Invoice[]>("/v1/billing/invoices"),
       ]);
       setRows(dues);
       setUnits(unitList);
+      setInvoices(invoiceList);
 
       // Charge heads decide which extra boxes the invoice form needs. A reader without
       // money authority is refused here, and that must not blank the arrears table.
@@ -195,6 +213,55 @@ export default function Billing() {
             </tr>
           );
         })}
+      </Ledger>
+
+      <Ledger
+        title="Invoices issued"
+        note="newest first"
+        head={["Invoice", "Flat", "Period", "Due", "~Total", "~Balance", "Status", "PDF"]}
+        empty="No invoice has been raised yet."
+        isEmpty={!loading && invoices.length === 0}
+      >
+        {invoices.map((invoice) => (
+          <tr key={invoice.id}>
+            <td className="strong">{invoice.invoiceNumber}</td>
+            <td>
+              {invoice.unitNumber}
+              <span className="muted"> · {invoice.towerName}</span>
+            </td>
+            <td className="muted">
+              {shortDate(invoice.periodStart)} – {shortDate(invoice.periodEnd)}
+            </td>
+            <td>
+              {invoice.overdue ? (
+                <Chip tone="arrears">{shortDate(invoice.dueDate)}</Chip>
+              ) : (
+                <span className="muted">{shortDate(invoice.dueDate)}</span>
+              )}
+            </td>
+            <td className="num">{rupees(invoice.total)}</td>
+            <td className="num" data-tone={toPaise(invoice.balance) > 0n ? "arrears" : undefined}>
+              {rupees(invoice.balance)}
+            </td>
+            <td>
+              <Chip tone={invoice.status === "paid" ? "settled" : "quiet"}>
+                {invoice.status.replace(/_/g, " ")}
+              </Chip>
+            </td>
+            <td>
+              <button
+                onClick={() =>
+                  void download(
+                    `/v1/billing/invoices/${invoice.id}/pdf`,
+                    `invoice-${invoice.invoiceNumber}.pdf`,
+                  )
+                }
+              >
+                Download
+              </button>
+            </td>
+          </tr>
+        ))}
       </Ledger>
 
       <section className="card settle">

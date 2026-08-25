@@ -597,3 +597,84 @@ ahead of everything except the credential-blocked Razorpay proof.
 > **resident** on each payment. For a 171-unit society paying monthly that is roughly
 > ₹22,500 a year taken from residents on top of the licence, and it appears on no slide in
 > 120 pages.
+
+---
+
+[2026-08-25 08:40 IST] — INVOICE AND RECEIPT PDFs (MG-5, and the footer half of MG-12)
+
+**WHAT:** A PDF writer (`apps/api/src/common/pdf.ts`), amounts in words in the Indian
+system (`packages/money/src/words.ts`), and the two documents a society actually hands out
+(`apps/api/src/modules/billing/documents.service.ts`). Plus the listings that had to exist
+for either to be reachable — `GET /v1/billing/invoices` and `/receipts` — and a Download
+button on the billing and payments pages.
+
+**WHY:** A resident who cannot download a receipt does not believe they paid. That is not
+a screen problem: the receipt is what gets forwarded to a spouse, attached to an email
+about a disputed dues notice, and shown to a buyer during a flat sale two years later. It
+has to outlive this application. The same argument runs the other way for an invoice — a
+society that cannot hand its chartered accountant a stack of PDFs at year end will keep
+issuing bills in Word, and then the books here and the bills on the noticeboard disagree.
+
+**HOW:** PDF 1.4 written by hand rather than through a library. Three reasons, in order of
+weight. **Size** — base-14 fonts are in every viewer, so nothing is embedded and an
+invoice is ~3.4 KB against 40-80 KB from a library that subsets a TrueType face; a
+thousand societies issuing 250 invoices a month is 250,000 documents. **Determinism** —
+the bytes are a pure function of content and creation date, so tests can assert on them.
+**No dependency** — nothing to audit or patch, no native build step on Cloud Run.
+
+The one real trap is the rupee sign. U+20B9 is not in WinAnsiEncoding and base-14
+Helvetica has no glyph for it, so emitting it gives a blank box or a silently dropped
+character — on the one character an invoice cannot afford to lose. `encode()` rewrites it
+to `Rs.`, which is what printed Indian invoices have always used. A smoke check asserts
+the byte sequence never reaches a page.
+
+**DESIGN:** Amounts are set in Courier, deliberately: a column of figures that lines up
+digit-for-digit is easier to check by eye, and an accountant checks by eye. The Adobe
+Core 14 width tables are in the module because right-aligning a proportional face requires
+measuring the string before drawing it.
+
+`amountInWords` is in the money package rather than the API because it is money
+presentation, and because Indian grouping — crore, lakh, thousand — cannot be borrowed
+from a generic library without producing "one hundred twenty-three thousand" where the
+society's books say "one lakh twenty-three thousand". It is not decoration: a receipt
+without the amount in words is not a receipt an Indian auditor recognises, for a reason
+older than the software — a figure can be altered with a pen and a sentence cannot.
+
+**Access is the part that had to be right.** A resident downloads their own flat's
+documents and nobody else's, and the predicate is evaluated in SQL against their own
+occupancies, never against a parameter they send — the same rule the document repository
+uses. A society-level receipt with no flat attached belongs to the committee, so the
+predicate excludes it for a resident rather than treating a null unit as public.
+
+**CODE:** `apps/api/src/common/pdf.ts` (`Pdf`, `encode`, `textWidth`),
+`packages/money/src/words.ts` (`amountInWords`, `numberToIndianWords`),
+`apps/api/src/modules/billing/documents.service.ts`
+(`BillingDocumentsService.invoice`, `.receipt`, `.listInvoices`, `.unitPredicate`),
+routes in `billing.controller.ts`.
+
+**MODEL:** L5
+
+**NEXT:** MG-12's other half — the penalty report — then MG-11 advance and credit
+balances, MG-6 budget vs actual, MG-7 asset register.
+
+> **Three things running it found that compiling it did not.**
+>
+> A migrated society's invoice number is `OPEN-M82102601-2026-08-25`, and the top-right
+> fact block printed it straight through its own label. The fix measures the pair and
+> drops the value to its own line when it will not fit — which is the general answer, not
+> a wider column that the next long value overruns anyway.
+>
+> An imported opening balance has no invoice lines, so the table rendered as a header over
+> nothing, which reads as a rendering fault rather than as the truth about the data. It
+> now says so in words.
+>
+> And a check I wrote asserting the receipt would warn "not yet confirmed against the
+> bank" was simply wrong about the domain: `/v1/payments/manual` is the accountant
+> asserting they have seen the money, so that receipt is confirmed and must not carry the
+> warning. The warning path exists for a resident-supplied UTR, which is a claim. The
+> check now asserts the opposite, and that the bank reference is printed so an auditor can
+> trace it.
+>
+> Independently verified: `pypdf` — installed into the scratchpad, never into this repo —
+> opens both documents, reads the metadata title, and extracts the text intact including
+> a society name containing brackets.

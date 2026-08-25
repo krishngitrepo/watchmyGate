@@ -84,12 +84,12 @@ Legend: `planned` · `in-progress` · `unproven` · `completed`
 | Neighbour directory with privacy controls, opt-in chat | planned |
 | Lost & found, event calendar, RSVP | planned |
 | Amenity booking with DB-level double-booking prevention | completed | endpoints added; overlap refused by the constraint |
-| Document repository with role-based access | planned |
+| Document repository with role-based access | completed | society / committee / one-flat visibility, filtered in SQL; expiry countdown; supersession |
 | Parking slot allocation | completed | plus vehicles and violation flagging |
-| Society admin console | completed | 14 pages, every one of them writing; 93 console smoke checks |
-| Chart of accounts, trial balance, P&L, balance sheet | planned |
-| Tally-compatible export, PDF vouchers | planned |
-| Role-based accounting access (Admin / Assistant / DEO / Auditor) | planned |
+| Society admin console | completed | 19 pages, every one of them writing; 163 console smoke checks |
+| Chart of accounts, trial balance, Income & Expenditure, balance sheet | completed | plus cash flow, day book and house statement |
+| Tally-compatible export, PDF invoices and receipts | completed | Tally XML + CSV; invoice and receipt PDFs with amount in words |
+| Role-based accounting access (Admin / Assistant / DEO / Auditor) | completed | an auditor reads everything and writes nothing |
 | Bulk bill clearing via bank statement or Excel upload | planned |
 | Helpdesk analytics — ageing, SLA breaches, vendor leaderboard | completed | Reports page; breach counts late resolutions too |
 | Ticket search and filter by flat, category, keyword, status | completed | search plus a status filter on the complaints page |
@@ -102,8 +102,8 @@ Legend: `planned` · `in-progress` · `unproven` · `completed`
 | **Migration tooling — Tally / Excel / competitor CSV import** | in-progress | flats + opening balances done; Tally/competitor formats next |
 | Guard training kit and onboarding playbook | planned |
 | 8 regional languages, resident + guard apps | planned |
-| DPDP consent manager and consent ledger | planned |
-| Data export and erasure with cascade | planned |
+| DPDP consent manager and consent ledger | completed | append-only by trigger; withdrawal; published DPO |
+| Data export and erasure with cascade | completed | erasure redacts to a tombstone; s.8(7) retentions stated, not hidden |
 | Budget planning and variance tracking | planned |
 | Corpus / sinking fund with restricted-use controls | planned |
 | State rule-packs (MCS Act, KAOA, RERA AOA) | planned |

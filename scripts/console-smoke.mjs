@@ -54,6 +54,65 @@ async function call(method, path, body) {
   return { status: res.status, body: json };
 }
 
+/**
+ * The same call, but keeping the bytes.
+ *
+ * A PDF read through `call()` comes back as a mangled string, and "did the invoice
+ * download" is exactly the check that has to look at real bytes.
+ */
+async function fetchBinary(path, as = token) {
+  const res = await fetch(`${BASE}${path}`, {
+    headers: { ...(as ? { Authorization: `Bearer ${as}` } : {}) },
+  });
+  return {
+    status: res.status,
+    disposition: res.headers.get("content-disposition") ?? "",
+    type: res.headers.get("content-type") ?? "",
+    bytes: Buffer.from(await res.arrayBuffer()),
+  };
+}
+
+/** Sign in as somebody else, without disturbing the admin token this script runs on. */
+async function tokenFor(phone, societyId) {
+  await call("POST", "/v1/auth/otp/request", { phone });
+  await new Promise((r) => setTimeout(r, 400));
+  const { code } = JSON.parse(readFileSync(".otp-stub.json", "utf8"));
+  const verified = await call("POST", "/v1/auth/otp/verify", { phone, code });
+  const scoped = await call("POST", "/v1/auth/refresh", {
+    refreshToken: verified.body?.refreshToken,
+    societyId,
+  });
+  return scoped.body?.accessToken ?? "";
+}
+
+async function callAs(as, method, path) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      ...(as ? { Authorization: `Bearer ${as}` } : {}),
+    },
+  });
+  const text = await res.text();
+  let json;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = text;
+  }
+  return { status: res.status, body: json };
+}
+
+/** Paise as BigInt, so a balance assertion never compares two floats. */
+function toPaise(amount) {
+  if (!amount) return 0n;
+  const raw = String(amount);
+  const negative = raw.startsWith("-");
+  const [whole = "0", fraction = ""] = (negative ? raw.slice(1) : raw).split(".");
+  const paise = BigInt(whole) * 100n + BigInt((fraction + "00").slice(0, 2));
+  return negative ? -paise : paise;
+}
+
 const ok = (r) => r.status >= 200 && r.status < 300;
 const why = (r) => `${r.status} ${JSON.stringify(r.body).slice(0, 160)}`;
 
@@ -930,6 +989,114 @@ async function main() {
     "version",
   );
 
+
+  // ------------------------------------------------ invoice and receipt PDFs
+  console.log("");
+  console.log("--- Invoice and receipt PDFs ---");
+
+  const invoiceList = await call("GET", "/v1/billing/invoices");
+  check("invoices list", ok(invoiceList), why(invoiceList));
+
+  const billed = (invoiceList.body ?? []).find((i) => i.unitId === unitId);
+  check("the invoice just issued is listed", Boolean(billed), "not found in the listing");
+
+  // The balance is read, never stored. Stored, it could drift away from the allocations
+  // that are supposed to define it, and nobody would notice until an audit.
+  check(
+    "balance is total minus what has been allocated",
+    Boolean(billed) && toPaise(billed.balance) === toPaise(billed.total) - toPaise(billed.allocated),
+    billed ? `${billed.total} - ${billed.allocated} != ${billed.balance}` : "no invoice",
+  );
+
+  const invoicePdf = await fetchBinary(`/v1/billing/invoices/${billed?.id}/pdf`);
+  check("the invoice downloads as a PDF", invoicePdf.status === 200, String(invoicePdf.status));
+  check(
+    "it is really a PDF, not JSON wearing a PDF content type",
+    invoicePdf.bytes.subarray(0, 8).toString("latin1") === "%PDF-1.4",
+    invoicePdf.bytes.subarray(0, 24).toString("latin1"),
+  );
+  check(
+    "the file is complete",
+    invoicePdf.bytes.subarray(-10).toString("latin1").trimEnd().endsWith("%%EOF"),
+    invoicePdf.bytes.subarray(-10).toString("latin1"),
+  );
+  check(
+    "the filename carries the invoice number",
+    invoicePdf.disposition.includes(billed?.invoiceNumber ?? "no-such-number"),
+    invoicePdf.disposition,
+  );
+  check(
+    "the flat and the document kind are on the page",
+    invoicePdf.bytes.includes(billed?.unitNumber ?? "") && invoicePdf.bytes.includes("TAX INVOICE"),
+    "expected the flat number and 'TAX INVOICE' in the content stream",
+  );
+  check(
+    "the rupee sign never reaches the page",
+    // Helvetica has no glyph for it; a viewer drops the character silently.
+    !invoicePdf.bytes.includes(Buffer.from([0xe2, 0x82, 0xb9])),
+    "an unrenderable rupee sign was emitted",
+  );
+
+  const receiptList = await call("GET", "/v1/billing/receipts");
+  check("receipts list", ok(receiptList), why(receiptList));
+  const cheque = (receiptList.body ?? []).find((r) => r.unitId === unitId);
+  check("the cheque recorded earlier is listed", Boolean(cheque), "not found");
+
+  const receiptPdf = await fetchBinary(`/v1/billing/receipts/${cheque?.id}/pdf`);
+  check("the receipt downloads as a PDF", receiptPdf.status === 200, String(receiptPdf.status));
+  check(
+    "the amount is written out in words",
+    receiptPdf.bytes.includes("Rupees One Hundred Only"),
+    "an Indian receipt without the amount in words is not a receipt",
+  );
+  // `/v1/payments/manual` is the accountant asserting they have seen the money, so this
+  // receipt is confirmed and must not carry the warning. The warning path exists for a
+  // resident-supplied UTR, which is a claim rather than a confirmation.
+  check(
+    "the bank reference is printed so an auditor can trace it",
+    receiptPdf.bytes.includes(reference),
+    "the receipt carries no reference back to the bank statement",
+  );
+  check(
+    "a receipt an accountant confirmed does not warn about confirmation",
+    !receiptPdf.bytes.includes("not yet confirmed against the bank"),
+    "confirmed money was presented as a claim",
+  );
+
+  const noSuchInvoice = await fetchBinary(
+    "/v1/billing/invoices/00000000-0000-0000-0000-000000000000/pdf",
+  );
+  check(
+    "an invoice that does not exist is a 404",
+    noSuchInvoice.status === 404,
+    String(noSuchInvoice.status),
+  );
+
+  // The rule the whole feature turns on: a resident downloads their own bill and nobody
+  // else's. Priya occupies A-101; the invoice above belongs to a flat this script created,
+  // so she must neither see it in a listing nor be able to fetch it by id.
+  const priya = await tokenFor("+919900000002", societyId);
+  const herInvoices = await callAs(priya, "GET", "/v1/billing/invoices");
+  check("a resident can list invoices", ok(herInvoices), why(herInvoices));
+  check(
+    "a resident sees no other flat's invoice",
+    (herInvoices.body ?? []).every((i) => i.unitId !== unitId),
+    "a neighbour's invoice was listed",
+  );
+
+  const stolen = await fetchBinary(`/v1/billing/invoices/${billed?.id}/pdf`, priya);
+  check(
+    "a resident cannot fetch a neighbour's invoice by id",
+    stolen.status === 404,
+    `expected 404, got ${stolen.status}`,
+  );
+
+  const herReceipts = await callAs(priya, "GET", "/v1/billing/receipts");
+  check(
+    "a resident sees no other flat's receipt",
+    ok(herReceipts) && (herReceipts.body ?? []).every((r) => r.unitId !== unitId),
+    why(herReceipts),
+  );
 
   // -------------------------------------------------------------- the rail
   console.log("\n--- what the rail hides ---");

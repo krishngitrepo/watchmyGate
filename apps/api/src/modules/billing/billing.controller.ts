@@ -1,9 +1,11 @@
-import { Body, Controller, Get, Post } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, Query, Res, StreamableFile } from "@nestjs/common";
+import type { Response } from "express";
 import { z } from "zod";
 
 import { ForbiddenError } from "../../common/errors.js";
 import { hasRole } from "../../common/tenant-context.js";
 import { BillingService } from "./billing.service.js";
+import { BillingDocumentsService, type RenderedDocument } from "./documents.service.js";
 
 const previewSchema = z.object({
   unitId: z.string().uuid(),
@@ -16,7 +18,10 @@ const previewSchema = z.object({
 
 @Controller("v1/billing")
 export class BillingController {
-  constructor(private readonly billing: BillingService) {}
+  constructor(
+    private readonly billing: BillingService,
+    private readonly documents: BillingDocumentsService,
+  ) {}
 
   /**
    * What a bill for this society is made of.
@@ -49,6 +54,55 @@ export class BillingController {
   async issue(@Body() body: unknown) {
     this.requireAccounting();
     return this.billing.issue(previewSchema.parse(body));
+  }
+
+  // ------------------------------------------------------------- documents
+  //
+  // Deliberately not behind `requireAccounting`. A resident must be able to pull their
+  // own bill and their own receipt - that is the entire point of MG-5 - so the boundary
+  // here is *which rows*, enforced in SQL by the service, not *which roles*.
+
+  @Get("invoices")
+  async invoices(
+    @Query("unitId") unitId?: string,
+    @Query("status") status?: string,
+  ) {
+    return this.documents.listInvoices({
+      ...(unitId ? { unitId } : {}),
+      ...(status ? { status } : {}),
+    });
+  }
+
+  @Get("receipts")
+  async receipts(@Query("unitId") unitId?: string) {
+    return this.documents.listReceipts(unitId ? { unitId } : {});
+  }
+
+  @Get("invoices/:id/pdf")
+  async invoicePdf(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    return this.send(response, await this.documents.invoice(id));
+  }
+
+  @Get("receipts/:id/pdf")
+  async receiptPdf(
+    @Param("id") id: string,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<StreamableFile> {
+    return this.send(response, await this.documents.receipt(id));
+  }
+
+  /**
+   * Headers set here rather than by `@Header`, because the filename carries the invoice
+   * number - a folder of `document.pdf`, `document(1).pdf` is not a filing system.
+   */
+  private send(response: Response, document: RenderedDocument): StreamableFile {
+    response.setHeader("Content-Type", "application/pdf");
+    response.setHeader("Content-Disposition", `attachment; filename="${document.filename}"`);
+    response.setHeader("Content-Length", String(document.bytes.length));
+    return new StreamableFile(document.bytes);
   }
 
   private requireAccounting(): void {
