@@ -1268,12 +1268,26 @@ async function main() {
   );
   check("there are expense heads to budget against", expenseHeads.length > 0, "none found");
 
-  // Only one live budget is allowed per financial year, by unique index — so each run
-  // takes the next free year rather than fighting the constraint the product depends on.
+  // Only one live budget is allowed per financial year, by unique index. Rather than
+  // walking forward a year per run — which is how the abandoned-draft trap got found —
+  // the run reuses one far-future year and clears anything a previous run left live.
+  const TEST_YEAR = 2099;
   const existingBudgets = await call("GET", "/v1/ledger/budgets");
   check("budget list", ok(existingBudgets), why(existingBudgets));
-  const testYear =
-    Math.max(2089, ...(existingBudgets.body ?? []).map((b) => b.financialYear)) + 1;
+
+  for (const leftover of (existingBudgets.body ?? []).filter(
+    (b) => b.financialYear === TEST_YEAR && b.status !== "superseded",
+  )) {
+    // An approved leftover has to be superseded first; the revision it produces is a
+    // draft, which can then be discarded outright.
+    if (leftover.status === "approved") {
+      const revision = await call("POST", `/v1/ledger/budgets/${leftover.id}/revise`);
+      if (revision.body?.id) await call("DELETE", `/v1/ledger/budgets/${revision.body.id}`);
+    } else {
+      await call("DELETE", `/v1/ledger/budgets/${leftover.id}`);
+    }
+  }
+  const testYear = TEST_YEAR;
 
   const draft = await call("POST", "/v1/ledger/budgets", {
     financialYear: testYear,
@@ -1409,6 +1423,28 @@ async function main() {
     "and it points back at what it replaced",
     newOne?.supersedesId === budgetId,
     `supersedesId was ${newOne?.supersedesId}`,
+  );
+
+  // An abandoned draft must be discardable, or it blocks its financial year for ever.
+  // A passed one must not be, or a decision can be made to disappear.
+  const discardPassed = await call("DELETE", `/v1/ledger/budgets/${budgetId}`);
+  check(
+    "a budget that has been passed cannot be discarded",
+    discardPassed.status >= 400,
+    `expected a refusal, got ${discardPassed.status}`,
+  );
+  const discardDraft = await call("DELETE", `/v1/ledger/budgets/${revised.body?.id}`);
+  check("an abandoned draft can be discarded", ok(discardDraft), why(discardDraft));
+  check(
+    "and the financial year is free again",
+    ok(
+      await call("POST", "/v1/ledger/budgets", {
+        financialYear: testYear,
+        title: `Reuse check ${stamp}`,
+        lines: [],
+      }),
+    ),
+    "the year stayed blocked by a draft nobody finished",
   );
 
   const herBudgets = await callAs(priya, "GET", "/v1/ledger/budgets");
@@ -1605,6 +1641,150 @@ async function main() {
     "but the asset itself is kept, with what happened to it",
     stillListed?.status === "disposed" && stillListed?.disposedOn === today,
     JSON.stringify(stillListed),
+  );
+
+  // -------------------------------------------- the audit log, and the register
+  console.log("");
+  console.log("--- Audit log and the gate register ---");
+
+  // Everything above this line in the run has already happened. If the log is written
+  // where it claims to be, those acts are in it.
+  const auditActions = await call("GET", "/v1/audit/actions");
+  check("the audit log reports what it holds", ok(auditActions), why(auditActions));
+  const actionNames = (auditActions.body ?? []).map((a) => a.action);
+  check(
+    "it is not empty — it held zero rows before this",
+    actionNames.length > 0,
+    "nothing has ever been written to the audit log",
+  );
+
+  for (const [auditedAction, what] of [
+    ["role.granted", "granting somebody a role"],
+    ["receipt.recorded", "recording money taken outside the gateway"],
+    ["budget.approved", "passing a budget"],
+    ["asset.disposed", "retiring an asset"],
+  ]) {
+    check(`${what} is logged`, actionNames.includes(auditedAction), `${auditedAction} missing`);
+  }
+
+  const grants = await call("GET", "/v1/audit?action=role.granted&limit=5");
+  check("the log can be searched by action", ok(grants), why(grants));
+  check(
+    "an entry names who did it, not just what happened",
+    (grants.body ?? []).every((e) => typeof e.actorName === "string" || e.actorPersonId),
+    "an audit entry with no actor answers the wrong question",
+  );
+  check(
+    "and carries the detail as structured data",
+    (grants.body ?? []).some((e) => e.after && typeof e.after === "object"),
+    "no structured payload on any entry",
+  );
+
+  const budgetEntries = await call("GET", "/v1/audit?action=budget.approved&limit=5");
+  check(
+    "passing a budget records the resolution it was passed under",
+    (budgetEntries.body ?? []).some((e) => typeof e.reason === "string" && e.reason.length > 0),
+    "the reason was not carried into the log",
+  );
+
+  // A resident may read their own entries and nobody else's. The log names colleagues'
+  // actions as much as events.
+  const herAudit = await callAs(priya, "GET", "/v1/audit");
+  check("a resident can read their own entries", ok(herAudit), why(herAudit));
+  check(
+    "and sees only their own",
+    (herAudit.body ?? []).every((e) => e.actorName !== "Krishna Nara"),
+    "a resident saw an entry belonging to somebody else",
+  );
+  const herProbe = await callAs(
+    priya,
+    "GET",
+    "/v1/audit?actorPersonId=00000000-0000-0000-0000-000000000001",
+  );
+  check(
+    "a resident cannot ask for somebody else's entries",
+    herProbe.status === 403,
+    `expected 403, got ${herProbe.status}`,
+  );
+
+  // --- the register ---------------------------------------------------------
+  const gateRegister = await call("GET", "/v1/gate/register");
+  check("the gate register", ok(gateRegister), why(gateRegister));
+  check(
+    "it says retention bounds what it can show",
+    typeof gateRegister.body?.retentionNote === "string",
+    "a short history presented as a complete one",
+  );
+  check(
+    "a register line is a visit, not an event",
+    (gateRegister.body?.rows ?? []).every(
+      (r) => r.direction === "entry" && typeof r.stillInside === "boolean",
+    ),
+    "exits appeared as their own lines",
+  );
+  check(
+    "a visitor still inside has no exit time and says so",
+    (gateRegister.body?.rows ?? []).every(
+      (r) => (r.exitAt === null) === (r.stillInside === true),
+    ),
+    "stillInside and exitAt disagree",
+  );
+
+  const insideOnly = await call("GET", "/v1/gate/register?insideOnly=true");
+  check(
+    "the register can answer who is inside right now",
+    ok(insideOnly) && (insideOnly.body?.rows ?? []).every((r) => r.stillInside === true),
+    why(insideOnly),
+  );
+
+  const badRange = await call("GET", "/v1/gate/register?from=2026-12-31&to=2026-01-01");
+  check(
+    "a period that ends before it starts is refused",
+    badRange.status === 400 || badRange.status === 422,
+    `expected a refusal, got ${badRange.status}`,
+  );
+
+  const noReasonExport = await fetchBinary("/v1/gate/register/export");
+  check(
+    "exporting the register without saying why is refused",
+    noReasonExport.status === 400 || noReasonExport.status === 422,
+    `expected a refusal, got ${noReasonExport.status}`,
+  );
+
+  const auditExported = await fetchBinary(
+    "/v1/gate/register/export?reason=Police%20request%20dated%2025%20August%202026",
+  );
+  check("the register exports", auditExported.status === 200, String(auditExported.status));
+  check(
+    "the file starts with a byte-order mark so Excel reads Indian names correctly",
+    auditExported.bytes[0] === 0xef && auditExported.bytes[1] === 0xbb && auditExported.bytes[2] === 0xbf,
+    "without a BOM Excel on Windows renders the names as mojibake",
+  );
+  check(
+    "it carries the columns a paper register has, plus the guard",
+    auditExported.bytes.includes("S.No") &&
+      auditExported.bytes.includes("Time out") &&
+      auditExported.bytes.includes("Guard"),
+    auditExported.bytes.subarray(0, 200).toString("utf8"),
+  );
+
+  const exportEntries = await call("GET", "/v1/audit?action=register.exported&limit=5");
+  check(
+    "exporting the register is logged as a disclosure",
+    (exportEntries.body ?? []).length > 0,
+    "four hundred residents' movements left the system unrecorded",
+  );
+  check(
+    "with the stated reason attached",
+    (exportEntries.body ?? []).some((e) => (e.reason ?? "").includes("Police request")),
+    "the reason was not recorded",
+  );
+
+  const herRegister = await callAs(priya, "GET", "/v1/gate/register");
+  check(
+    "a resident cannot read the gate register",
+    herRegister.status === 403,
+    `expected 403, got ${herRegister.status}`,
   );
 
   // -------------------------------------------------------------- the rail

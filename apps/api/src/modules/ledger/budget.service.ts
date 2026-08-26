@@ -29,6 +29,7 @@ import { Injectable } from "@nestjs/common";
 import { sql } from "drizzle-orm";
 
 import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, hasRole, tx } from "../../common/tenant-context.js";
 
 function rowsOf<T>(result: unknown): T[] {
@@ -55,6 +56,8 @@ export interface BudgetLineInput {
 
 @Injectable()
 export class BudgetService {
+  constructor(private readonly audit: AuditService) {}
+
   async list() {
     return tx(async (db) =>
       rowsOf(
@@ -134,6 +137,35 @@ export class BudgetService {
   }
 
   /**
+   * Discard a draft.
+   *
+   * Only a draft, and the database enforces that rather than this check — an approved
+   * budget is a decision and a superseded one is history. This exists because only one
+   * budget per financial year may be live, so a draft somebody started and abandoned
+   * would otherwise block that year for ever.
+   */
+  async discard(budgetId: string) {
+    this.requireDrafting();
+
+    return tx(async (db) => {
+      const budget = await this.mustExist(db, budgetId);
+      if (budget.status !== "draft") {
+        throw new ConflictError(
+          "Only a draft can be discarded. A budget that has been passed is superseded, never removed.",
+        );
+      }
+      await this.audit.record(db, {
+        action: "budget.discarded",
+        entityType: "budget",
+        entityId: budgetId,
+        before: { status: budget.status, version: budget.version },
+      });
+      await db.execute(sql`DELETE FROM budgets WHERE id = ${budgetId}`);
+      return { status: "discarded" };
+    });
+  }
+
+  /**
    * Pass the budget.
    *
    * **The person who wrote it cannot be the person who passes it.** A budget is a
@@ -181,6 +213,15 @@ export class BudgetService {
             updated_at = now()
         WHERE id = ${budgetId}
       `);
+
+      await this.audit.record(db, {
+        action: "budget.approved",
+        entityType: "budget",
+        entityId: budgetId,
+        after: { lineCount, version: budget.version },
+        reason: resolutionRef.trim(),
+      });
+
       return { status: "approved" };
     });
   }
@@ -224,6 +265,14 @@ export class BudgetService {
         SELECT ${societyId}, ${created.id}, account_id, annual_amount, notes
         FROM budget_lines WHERE budget_id = ${budgetId}
       `);
+
+      await this.audit.record(db, {
+        action: "budget.revised",
+        entityType: "budget",
+        entityId: created.id,
+        before: { supersededBudgetId: budgetId, version: budget.version },
+        after: { version: budget.version + 1 },
+      });
 
       return { id: created.id, version: budget.version + 1 };
     });

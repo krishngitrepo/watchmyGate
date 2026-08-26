@@ -5,9 +5,9 @@ conservative: **Done** means it exists *and* is proven by a test that would fail
 broke. Code that exists but has never been exercised against the real dependency is
 **Unproven**, not Done — that distinction is the whole point of this file.
 
-Counts as of the last update: **460 TypeScript tests** (db 267, money 66, api 114,
+Counts as of the last update: **462 TypeScript tests** (db 269, money 66, api 114,
 worker 13), **81 Dart tests** (guard 61, resident 20), **30 Python tests**, **45
-end-to-end checks**, **35 Phase 2 smoke checks** and **237 console smoke checks** — all
+end-to-end checks**, **35 Phase 2 smoke checks** and **266 console smoke checks** — all
 green against live Neon.
 
 Legend — **Done** · **Unproven** (built, never exercised for real) · **Partial** ·
@@ -251,7 +251,7 @@ pages*, not missing foundations, which is why they rank first.
 |---|---|---|---|---|
 | MG-20 | **Guard patrolling** with geofenced check-ins | Basic | Todo | The first thing a security agency asks about |
 | MG-21 | **Kids checkout** — child leaves, guardian approves | Basic | Todo | Small, emotionally central to parents, clean in a demo |
-| MG-22 | Digital register replacing the gate book, Excel export | Basic | Todo | Named specifically for trucks in the sales notes |
+| MG-22 | Digital register replacing the gate book, Excel export | Basic | **Done** | One line per visit, not per event; guard named; CSV with a BOM so Excel reads Indian names; the export is logged as a disclosure |
 | MG-23 | **Animated QR / screenshot protection** | Basic | **Done** | v2 rolling proof, 30 s step, +/-1 tolerance. A forwarded screenshot stops working. The resident app does not yet generate its keypair |
 | MG-24 | Frequent-visitor list and one-click re-invite | Basic | Partial | Passes exist; "invite my regulars again" does not |
 | MG-25 | Visitor photo in the approval notification | Basic | Partial | Capture is designed; not wired to push |
@@ -279,7 +279,7 @@ pages*, not missing foundations, which is why they rank first.
 | MG-42 | MIS/TAT reports by assignee, with export | Basic | Partial | Reports page has ageing and breaches, not by assignee |
 | MG-43 | Amenity depth — access control, grouping, cooldown, cancellation charges, recurring bookings, utilisation report | Basic | Todo | Their soft-block is an app-level fix for the race our constraint already prevents |
 | MG-44 | Custom roles | Basic | Todo | We ship seven fixed; they allow ten custom |
-| MG-45 | Audit log viewer in the console | Basic | Partial | The log is immutable and complete; nothing displays it |
+| MG-45 | Audit log viewer in the console | Basic | **Done** | The log was immutable and **empty** — nothing had ever written to it. Now written and readable |
 | MG-46 | Rent-a-parking between residents | Basic | Todo | We store a monthly rate; there is no rental flow |
 | MG-47 | Community feed, classes, pet directory, buy & sell, local services | Basic | Todo | Phase 4. Pet vaccination status is a good hook |
 

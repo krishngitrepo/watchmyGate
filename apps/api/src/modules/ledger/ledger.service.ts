@@ -22,6 +22,7 @@ import { schema, type TenantTx } from "@watchmygate/db";
 import { ZERO, money, toDbString, type Money } from "@watchmygate/money";
 
 import { ConflictError, ValidationError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
 
 export type SourceType =
@@ -54,6 +55,8 @@ export interface PostEntryInput {
 
 @Injectable()
 export class LedgerService {
+  constructor(private readonly audit: AuditService) {}
+
   /**
    * Write a balanced journal entry.
    *
@@ -317,19 +320,28 @@ export class LedgerService {
             eq(schema.accountingPeriods.societyId, societyId),
           ),
         );
+
+      await this.audit.record(db, {
+        action: "period.locked",
+        entityType: "accounting_period",
+        entityId: periodId,
+        after: { lockedBy: personId },
+      });
     });
   }
 
   /**
    * Reopen a closed period. Requires two different people.
    *
-   * Reopening closed books is how fraud is committed, so it needs a second signature
-   * and leaves an audit record naming both.
+   * Reopening closed books is how fraud is committed, so it needs a second signature and
+   * leaves an audit record naming both — along with the stated reason, which is the part
+   * anybody reviewing this months later will actually want.
    */
   async reopenPeriod(
     periodId: string,
     requestedBy: string,
     approvedBy: string,
+    reason: string,
   ): Promise<void> {
     if (requestedBy === approvedBy) {
       throw new ConflictError(
@@ -346,6 +358,14 @@ export class LedgerService {
           reopenedApprovedBy: approvedBy,
         })
         .where(eq(schema.accountingPeriods.id, periodId));
+
+      await this.audit.record(db, {
+        action: "period.reopened",
+        entityType: "accounting_period",
+        entityId: periodId,
+        after: { requestedBy, approvedBy },
+        reason,
+      });
     });
   }
 

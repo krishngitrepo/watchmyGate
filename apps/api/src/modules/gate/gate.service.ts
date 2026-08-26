@@ -17,6 +17,7 @@ import { and, desc, eq, gte, sql } from "drizzle-orm";
 import { schema } from "@watchmygate/db";
 
 import { NotFoundError, ValidationError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
 import { driftSeconds, DRIFT_ALERT_SECONDS, type VisitorCategory } from "./ladder.js";
 import {
@@ -64,6 +65,8 @@ export interface SyncResult {
 
 @Injectable()
 export class GateService {
+  constructor(private readonly audit: AuditService) {}
+
   /**
    * Drain a batch from a guard device.
    *
@@ -440,6 +443,11 @@ export class GateService {
 
   async revokePass(passId: string): Promise<void> {
     await tx(async (db) => {
+      await this.audit.record(db, {
+        action: "pass.revoked",
+        entityType: "visitor_pass",
+        entityId: passId,
+      });
       await db
         .update(schema.visitorPasses)
         .set({ status: "revoked", revokedAt: new Date(), updatedAt: new Date() })

@@ -28,6 +28,7 @@ import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { schema } from "@watchmygate/db";
 
 import { ConflictError, NotFoundError, ValidationError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
 
 /**
@@ -85,6 +86,8 @@ function sha256(text: string): string {
 
 @Injectable()
 export class PrivacyService {
+  constructor(private readonly audit: AuditService) {}
+
   // ------------------------------------------------------------- notices
 
   /**
@@ -303,6 +306,21 @@ export class PrivacyService {
           `),
         ]);
 
+      // A person's whole record leaving the system. Logged whoever asked for it: a
+      // resident exercising section 11 over their own data and an admin pulling somebody
+      // else's are the same call and very different acts.
+      await this.audit.record(db, {
+        action: "person.exported",
+        entityType: "person",
+        entityId: personId,
+        after: {
+          occupancies: occupancies.length,
+          consents: consents.length,
+          complaints: tickets.length,
+        },
+        reason: "Data access request under section 11, DPDP Act 2023.",
+      });
+
       return {
         generatedAt: new Date().toISOString(),
         /** Stated in the file itself, so a recipient knows what they are holding. */
@@ -442,6 +460,19 @@ export class PrivacyService {
         })
         .where(eq(schema.erasureRequests.id, requestId))
         .returning();
+
+      // The record this response promises will exist. Until this entry was written the
+      // erasure told a person their audit records were retained "to demonstrate
+      // compliance", against a table that had never held a row.
+      await this.audit.record(db, {
+        action: "person.erased",
+        entityType: "person",
+        entityId: request.personId,
+        after: { requestId, erased: Object.keys(erased ?? {}) },
+        reason:
+          "Erasure completed under section 12, DPDP Act 2023. Identifiers redacted to a " +
+          "tombstone; records retained under section 8(7) are listed on the request.",
+      });
 
       return updated!;
     });

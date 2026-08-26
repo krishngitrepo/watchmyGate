@@ -15,7 +15,7 @@ import {
   Shell,
   useAction,
 } from "../../components/Shell";
-import { api, timeAgo } from "../../lib/api";
+import { api, can, download, shortDate, timeAgo } from "../../lib/api";
 
 interface GateEvent {
   id: string;
@@ -47,6 +47,31 @@ interface Rung {
   rung: string;
   firedAt: string;
   channelResult: string | null;
+}
+
+interface RegisterRow {
+  id: string;
+  serial: number;
+  entryAt: string;
+  exitAt: string | null;
+  minutesInside: number | null;
+  visitorName: string | null;
+  visitorPhone: string | null;
+  vehicleNumber: string | null;
+  unitNumber: string | null;
+  towerName: string | null;
+  guardName: string | null;
+  verifiedOffline: boolean;
+  clockDriftSeconds: number | null;
+  stillInside: boolean;
+}
+
+interface Register {
+  from: string;
+  to: string;
+  retentionNote: string;
+  oldestHeld: string | null;
+  rows: RegisterRow[];
 }
 
 interface Unit {
@@ -101,6 +126,11 @@ export default function GateLog() {
   const [loading, setLoading] = useState(true);
   const [issuing, setIssuing] = useState(false);
   const [watching, setWatching] = useState<Approval | null>(null);
+  const [register, setRegister] = useState<Register | null>(null);
+  const [search, setSearch] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  const mayReadRegister = can("society_admin", "mc_member");
 
   const unitsById = useMemo(() => new Map(units.map((u) => [u.id, u])), [units]);
 
@@ -114,12 +144,23 @@ export default function GateLog() {
       setInside(current);
       setPending(waiting);
       setUnits(unitList);
+
+      // Committee only — it is every visitor's name, phone number and vehicle for the
+      // period. A guard or a resident seeing this page must not see one 403 blank it.
+      if (mayReadRegister) {
+        try {
+          const query = search.trim() ? `?q=${encodeURIComponent(search.trim())}` : "";
+          setRegister(await api.get<Register>(`/v1/gate/register${query}`));
+        } catch {
+          setRegister(null);
+        }
+      }
     } catch (err) {
       setError((err as Error).message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [mayReadRegister, search]);
 
   useEffect(() => {
     void load();
@@ -261,6 +302,111 @@ export default function GateLog() {
           </p>
         </div>
       </section>
+
+      {mayReadRegister ? (
+        <Ledger
+          title="The register"
+          note={
+            register
+              ? `${shortDate(register.from)} to ${shortDate(register.to)} · one line per visit`
+              : "the book on the desk at the gate, replaced"
+          }
+          head={["S.No", "In", "Out", "Visitor", "Vehicle", "Flat", "Guard", "Status"]}
+          empty="No entries in this period."
+          isEmpty={!loading && (register?.rows.length ?? 0) === 0}
+          actions={
+            <>
+              <input
+                value={search}
+                placeholder="name, phone or vehicle"
+                onChange={(e) => setSearch(e.target.value)}
+              />
+              <button onClick={() => setExporting(true)}>Export</button>
+            </>
+          }
+        >
+          {(register?.rows ?? []).map((row) => (
+            <tr key={row.id}>
+              <td className="num muted" style={{ textAlign: "left" }}>
+                {row.serial}
+              </td>
+              <td className="muted">
+                {shortDate(row.entryAt)}
+                <span className="sub">{clockTime(row.entryAt)}</span>
+              </td>
+              <td className="muted">
+                {row.exitAt ? (
+                  <>
+                    {clockTime(row.exitAt)}
+                    <span className="sub">{row.minutesInside} min inside</span>
+                  </>
+                ) : (
+                  <Chip tone="pending">still inside</Chip>
+                )}
+              </td>
+              <td>
+                <span className="strong">
+                  {row.visitorName ?? <span className="muted">not recorded</span>}
+                </span>
+                {row.visitorPhone ? <span className="sub">{row.visitorPhone}</span> : null}
+              </td>
+              <td className="num muted" style={{ textAlign: "left" }}>
+                {row.vehicleNumber ?? "—"}
+              </td>
+              <td>
+                {row.unitNumber ?? <span className="muted">—</span>}
+                {row.towerName ? <span className="sub">{row.towerName}</span> : null}
+              </td>
+              <td className="muted">
+                {/* The paper book has a signature nobody can read and everybody shares. */}
+                {row.guardName ?? "—"}
+                {row.clockDriftSeconds !== null &&
+                Math.abs(row.clockDriftSeconds) > DRIFT_ALERT_SECONDS ? (
+                  <span className="sub">
+                    device clock off by {Math.round(row.clockDriftSeconds / 60)}m
+                  </span>
+                ) : null}
+              </td>
+              <td>
+                <Chip tone={row.verifiedOffline ? "settled" : "quiet"}>
+                  {row.verifiedOffline ? "offline pass" : "at gate"}
+                </Chip>
+              </td>
+            </tr>
+          ))}
+        </Ledger>
+      ) : null}
+
+      {mayReadRegister && register ? (
+        <section className="card settle">
+          <div className="card-head">
+            <h2>What this register can show</h2>
+          </div>
+          <div className="card-body">
+            <p>{register.retentionNote}</p>
+            <p>
+              {register.oldestHeld ? (
+                <>
+                  The oldest entry still held is from{" "}
+                  <strong>{shortDate(register.oldestHeld)}</strong>. Anything older has been
+                  purged, which is a DPDP obligation and not a fault.
+                </>
+              ) : (
+                "No gate entries are held yet."
+              )}
+            </p>
+          </div>
+        </section>
+      ) : null}
+
+      {exporting ? (
+        <ExportRegister
+          from={register?.from ?? ""}
+          to={register?.to ?? ""}
+          search={search}
+          onClose={() => setExporting(false)}
+        />
+      ) : null}
 
       {issuing ? (
         <IssuePass
@@ -625,4 +771,82 @@ function localNowPlusHours(hours: number): string {
   const then = new Date(Date.now() + hours * 3_600_000);
   then.setMinutes(then.getMinutes() - then.getTimezoneOffset());
   return then.toISOString().slice(0, 16);
+}
+
+
+/**
+ * Export the register.
+ *
+ * The reason box is not a formality and is not there because the API demands one. Four
+ * hundred residents' movements, with names, phone numbers and vehicles, leaving in a
+ * single file is a disclosure — and the person doing it should have to finish the
+ * sentence "because" before it happens. What they type is written to the audit log beside
+ * their name.
+ */
+function ExportRegister({
+  from,
+  to,
+  search,
+  onClose,
+}: {
+  from: string;
+  to: string;
+  search: string;
+  onClose: () => void;
+}) {
+  const action = useAction();
+  const [reason, setReason] = useState("");
+
+  const run = () =>
+    void action.run(
+      async () => {
+        const query = new URLSearchParams({ reason: reason.trim() });
+        if (from) query.set("from", from);
+        if (to) query.set("to", to);
+        if (search.trim()) query.set("q", search.trim());
+        await download(`/v1/gate/register/export?${query}`, `gate-register-${from}-to-${to}.csv`);
+      },
+      { onDone: onClose },
+    );
+
+  return (
+    <Modal
+      title="Export the register"
+      note="Opens in Excel. Every visitor's name, phone number and vehicle for the period."
+      onClose={onClose}
+      footer={
+        <>
+          <button onClick={onClose}>Cancel</button>
+          <button
+            data-variant="primary"
+            disabled={reason.trim().length < 10 || action.busy}
+            onClick={run}
+          >
+            Export
+          </button>
+        </>
+      }
+    >
+      {action.error ? <Problem error={action.error} /> : null}
+      <Banner tone="warn">
+        This is a disclosure, not a report. What you type below is recorded in the audit log
+        next to your name and the number of rows exported.
+      </Banner>
+      <Form onSubmit={run}>
+        <Field label="Why is this needed?" hint="at least a sentence — an auditor will read it">
+          <input
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="Police request dated 25 August 2026"
+          />
+        </Field>
+      </Form>
+    </Modal>
+  );
+}
+
+/** 24-hour clock, which is what a gate register has always used. */
+function clockTime(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }

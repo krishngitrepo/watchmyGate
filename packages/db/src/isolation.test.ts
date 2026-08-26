@@ -169,6 +169,7 @@ afterAll(async () => {
   await owner.query("ALTER TABLE budget_lines      DISABLE TRIGGER trg_budget_lines_frozen");
   await owner.query("ALTER TABLE budgets           DISABLE TRIGGER trg_budget_approval_one_way");
   await owner.query("ALTER TABLE asset_maintenance DISABLE TRIGGER trg_maintenance_final");
+  await owner.query("ALTER TABLE budgets           DISABLE TRIGGER trg_budget_delete_drafts_only");
 
   // Ordered by dependency; the owner bypasses RLS so this reaches both societies.
   await owner.query("BEGIN");
@@ -226,6 +227,7 @@ afterAll(async () => {
   await owner.query("ALTER TABLE budget_lines      ENABLE TRIGGER trg_budget_lines_frozen");
   await owner.query("ALTER TABLE budgets           ENABLE TRIGGER trg_budget_approval_one_way");
   await owner.query("ALTER TABLE asset_maintenance ENABLE TRIGGER trg_maintenance_final");
+  await owner.query("ALTER TABLE budgets           ENABLE TRIGGER trg_budget_delete_drafts_only");
 
   await owner.end();
   await app.end();
@@ -740,12 +742,42 @@ describe.skipIf(!configured)("a passed budget cannot be quietly edited", () => {
     ).rejects.toThrow(/revived/i);
   });
 
-  it("does not let the application delete a budget at all", async () => {
+  it("refuses to delete a budget that has been passed", async () => {
     // A budget the AGM passed is the record of a decision. Superseding is the only exit.
     const { budget } = await approvedBudget();
     await expect(
       asSociety(fx.societyB, (c) => c.query("DELETE FROM budgets WHERE id = $1", [budget])),
-    ).rejects.toThrow(/permission denied/i);
+    ).rejects.toThrow(/cannot be deleted/i);
+  });
+
+  it("lets an abandoned draft go", async () => {
+    // Only one budget per year may be live, so a draft nobody finished would otherwise
+    // block that financial year for ever. Migration 0013, found by a test that ran out
+    // of years.
+    const year = (nextYear += 1);
+    const budget = await asSociety(fx.societyB, async (c) =>
+      (
+        await c.query(
+          `INSERT INTO budgets (society_id, financial_year, title, created_by)
+           VALUES ($1, $2, 'Abandoned', $3) RETURNING id`,
+          [fx.societyB, year, fx.personB],
+        )
+      ).rows[0].id as string,
+    );
+    const removed = await asSociety(fx.societyB, (c) =>
+      c.query("DELETE FROM budgets WHERE id = $1", [budget]),
+    );
+    expect(removed.rowCount).toBe(1);
+  });
+
+  it("refuses to delete a superseded budget, which is history", async () => {
+    const { budget } = await approvedBudget();
+    await asSociety(fx.societyB, (c) =>
+      c.query("UPDATE budgets SET status = 'superseded' WHERE id = $1", [budget]),
+    );
+    await expect(
+      asSociety(fx.societyB, (c) => c.query("DELETE FROM budgets WHERE id = $1", [budget])),
+    ).rejects.toThrow(/cannot be deleted/i);
   });
 
   it("allows a draft to be edited freely, proving the freeze is the approval and not the table", async () => {

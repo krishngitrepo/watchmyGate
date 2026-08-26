@@ -16,6 +16,8 @@ import { ParkingService } from "./modules/parking/parking.service.js";
 import { DeliveriesService } from "./modules/deliveries/deliveries.service.js";
 import { StorageService } from "./common/storage.service.js";
 import { TasksService } from "./common/tasks.service.js";
+import { AuditService } from "./common/audit.service.js";
+import { AuditController } from "./modules/audit/audit.controller.js";
 import { AssetsController } from "./modules/assets/assets.controller.js";
 import { AuthController } from "./modules/auth/auth.controller.js";
 import { AuthService } from "./modules/auth/auth.service.js";
@@ -24,6 +26,7 @@ import { BillingService } from "./modules/billing/billing.service.js";
 import { BillingDocumentsService } from "./modules/billing/documents.service.js";
 import { ApprovalService } from "./modules/gate/approval.service.js";
 import { GateController } from "./modules/gate/gate.controller.js";
+import { RegisterService } from "./modules/gate/register.service.js";
 import { GateService } from "./modules/gate/gate.service.js";
 import { HelpdeskController } from "./modules/helpdesk/helpdesk.controller.js";
 import { InternalController } from "./modules/internal/internal.controller.js";
@@ -56,6 +59,7 @@ import { SmsService } from "./modules/notify/sms.service.js";
     HealthController,
     AuthController,
     AssetsController,
+    AuditController,
     BillingController,
     HelpdeskController,
     GateController,
@@ -82,6 +86,8 @@ import { SmsService } from "./modules/notify/sms.service.js";
     ReportsService,
     TallyService,
     PrivacyService,
+    AuditService,
+    RegisterService,
     BillingService,
     BillingDocumentsService,
     BudgetService,

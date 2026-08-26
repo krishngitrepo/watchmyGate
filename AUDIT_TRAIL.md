@@ -893,3 +893,86 @@ register with Excel export, MG-26 offline emergency contacts.
 > Postgres cannot infer the parameter's type, and depreciation rounded to four decimals
 > against a cost stored at four made cost minus depreciation differ from the written-down
 > value by a paise. Rounded to two, where anyone will actually check it.
+
+---
+
+[2026-08-26 07:10 IST] — THE AUDIT LOG, ACTUALLY WRITTEN (MG-45), AND THE GATE REGISTER (MG-22)
+
+**WHAT:** `AuditService`, audit writes on eleven acts across six modules, `/v1/audit`
+behind `AuditController`, a console page at `/audit/`, `RegisterService` with
+`/v1/gate/register` and its CSV export, the register on the gate page, and migration
+`0013_discard_draft_budget.sql`.
+
+**WHY — the part that was actually wrong.**
+
+`audit_log` has existed since migration 0001: partitioned by month, `INSERT` and `SELECT`
+granted to the application role, `UPDATE` and `DELETE` deliberately withheld so a
+compromised application cannot rewrite history. All of that was correct, and **nothing had
+ever written to it.** I checked before building the viewer: zero rows.
+
+That is worse than not having the table, because two things already leaned on it. The
+backlog described the log as "immutable and complete" — it was immutable and empty. And
+`LedgerService.reopenPeriod` carried a comment saying reopening "leaves an audit record
+naming both", which it did not; the controller's comment went further and said the reason
+travelled to "the audit middleware", which does not exist. Worst of the three: the DPDP
+erasure response tells a person, in writing, that their audit records are retained under
+s.8(7) because they are "required to demonstrate compliance, including with this Act" — a
+statutory claim resting on an empty table.
+
+**HOW:** `record(db, entry)` takes the caller's transaction rather than opening its own.
+Under Neon's transaction-mode pooler a nested `tx()` is a separate connection and a
+separate transaction, so an audit row written that way could survive a rolled-back action
+— a log claiming something happened that did not. `recordSafely()` exists for the one case
+where the trade runs the other way: failing to log must not fail an export the user is
+waiting on.
+
+**What gets logged, and what deliberately does not.** Acts of authority (role granted or
+revoked, budget passed or revised, period locked or reopened, pass revoked, asset retired,
+document removed), money leaving its normal path (a receipt taken outside the gateway, a
+credit swept), and bulk reads of personal data (the visitor register exported, a person's
+record exported, an erasure completed). **Ordinary reads are not logged.** A log that
+records everything is a log nobody can search, and it becomes the thing people mute rather
+than the thing they consult.
+
+**DESIGN — the register (MG-22).** `gate_events` records entries and exits separately,
+which is right for the gate and wrong for the register. A register line is what the paper
+book has always been: one visitor, time in, time out, still inside if the second column is
+blank. So it pairs the two events back into one row.
+
+Two columns the paper book never had: **which guard**, by name — the book has a signature
+nobody can read and everybody shares — and **device clock drift**, shown rather than
+hidden, because "the app says 14:05 and the book says 16:30" is the dispute this exists to
+settle.
+
+The export is CSV with a **UTF-8 byte-order mark**, which is load-bearing: without it Excel
+on Windows reads the file as the local code page and a visitor called Sreeja arrives as
+mojibake, which is how a committee stops trusting the export. Fields beginning `=`, `+`,
+`-` or `@` are prefixed with an apostrophe — CSV injection, in a file populated entirely by
+strangers typing at a guard.
+
+And the export **requires a stated reason**, in the API and in the interface, and writes it
+to the audit log. Four hundred residents' movements with names, phone numbers and vehicles
+in one file is a disclosure, not a read. Same treatment as CCTV footage, for the same
+reason.
+
+**CODE:** `apps/api/src/common/audit.service.ts`,
+`apps/api/src/modules/audit/audit.controller.ts`,
+`apps/api/src/modules/gate/register.service.ts`,
+`apps/web-admin/src/app/audit/page.tsx`, `apps/web-admin/src/app/gate/page.tsx`.
+
+**MODEL:** L5
+
+**NEXT:** MG-20 guard patrolling, MG-21 kids checkout, MG-26 offline emergency contacts.
+
+> **A trap the tests walked into, which a society would have walked into first.**
+>
+> Migration 0011 withheld `DELETE` on `budgets` entirely — a budget the AGM passed is the
+> record of a decision. Right about a passed budget, wrong about a draft, and combined
+> with the one-live-budget-per-year index it produced this: a treasurer starts a draft for
+> 2027-28, never finishes it, and **nobody can ever raise a budget for that year again.**
+>
+> The smoke test found it by walking forward one financial year per run to avoid the
+> index, and eventually hitting the 2100 ceiling on `ck_budget_year`. A contrived route to
+> a problem a real society reaches the first time somebody abandons a draft. Migration
+> 0013 grants `DELETE` back behind a trigger that permits it only for a draft, and the
+> test now reuses one year and clears up after itself.

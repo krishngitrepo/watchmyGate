@@ -20,6 +20,7 @@ import { and, eq, isNull, lte, or, sql } from "drizzle-orm";
 import { schema, withoutTenant, type TenantTx } from "@watchmygate/db";
 
 import { ConflictError, NotFoundError, ValidationError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
 
 export interface CreateUnitInput {
@@ -43,6 +44,8 @@ export interface AssignOccupantInput {
 
 @Injectable()
 export class SocietyService {
+  constructor(private readonly audit: AuditService) {}
+
   // ------------------------------------------------------------------ towers
 
   async createTower(input: { name: string; floors?: number | undefined }) {
@@ -351,6 +354,15 @@ export class SocietyService {
         validFrom: new Date().toISOString().slice(0, 10),
       });
 
+      // Who gave whom authority, and when. The question a committee asks after the fact
+      // far more often than it expects to.
+      await this.audit.record(db, {
+        action: "role.granted",
+        entityType: "person",
+        entityId: personId,
+        after: { roleCode: input.roleCode, phone: input.phone },
+      });
+
       return { status: "granted", personId };
     });
   }
@@ -379,6 +391,14 @@ export class SocietyService {
             isNull(schema.roleAssignments.validTo),
           ),
         );
+
+      await this.audit.record(db, {
+        action: "role.revoked",
+        entityType: "person",
+        entityId: input.personId,
+        before: { roleCode: input.roleCode },
+      });
+
       return { status: "revoked" };
     });
   }

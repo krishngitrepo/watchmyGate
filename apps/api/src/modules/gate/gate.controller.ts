@@ -13,13 +13,14 @@
  * not, which at an Indian apartment gate is most of the time.
  */
 
-import { Body, Controller, Get, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Get, Header, Param, Post, Query } from "@nestjs/common";
 import { z } from "zod";
 
 import { ForbiddenError } from "../../common/errors.js";
 import { hasRole } from "../../common/tenant-context.js";
 import { ApprovalService } from "./approval.service.js";
 import { GateService, type OutboxEvent } from "./gate.service.js";
+import { RegisterService } from "./register.service.js";
 
 const categories = ["guest", "delivery", "cab", "courier", "service", "staff"] as const;
 
@@ -76,6 +77,7 @@ export class GateController {
   constructor(
     private readonly gate: GateService,
     private readonly approvals: ApprovalService,
+    private readonly registerService: RegisterService,
   ) {}
 
   /**
@@ -159,6 +161,53 @@ export class GateController {
     return this.approvals.resolve(id, decision);
   }
 
+  /**
+   * The register — the book on the desk at the gate, replaced (MG-22).
+   *
+   * Committee work: it is every visitor's name, phone number and vehicle for the period,
+   * which is not something a neighbour gets to browse.
+   */
+  @Get("register")
+  async register(
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("category") category?: string,
+    @Query("unitId") unitId?: string,
+    @Query("q") q?: string,
+    @Query("insideOnly") insideOnly?: string,
+  ) {
+    this.requireCommittee();
+    return this.registerService.list({
+      from,
+      to,
+      category,
+      unitId,
+      q,
+      insideOnly: insideOnly === "true",
+    });
+  }
+
+  /**
+   * The register as a spreadsheet.
+   *
+   * A `reason` is required and recorded, because four hundred residents' movements in one
+   * file is a disclosure rather than a read. Same treatment as CCTV footage.
+   */
+  @Get("register/export")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="gate-register.csv"')
+  async exportRegister(
+    @Query("reason") reason: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("category") category?: string,
+    @Query("unitId") unitId?: string,
+    @Query("q") q?: string,
+  ) {
+    this.requireCommittee();
+    return this.registerService.exportCsv({ from, to, category, unitId, q }, reason ?? "");
+  }
+
   @Get("events")
   async events(@Query("unitId") unitId: string, @Query("limit") limit?: string) {
     return this.gate.recentForUnit(unitId, limit ? Number(limit) : 50);
@@ -173,6 +222,13 @@ export class GateController {
    * Guard devices are society property and shared between shifts, so they hold a
    * different and narrower authority than a resident's phone.
    */
+  /** The register names and tracks people. It is not a neighbourhood noticeboard. */
+  private requireCommittee(): void {
+    if (!hasRole("society_admin", "mc_member")) {
+      throw new ForbiddenError("The gate register is committee work.");
+    }
+  }
+
   private requireGuard(): void {
     if (!hasRole("guard", "society_admin")) {
       throw new ForbiddenError("This endpoint is for gate devices.");

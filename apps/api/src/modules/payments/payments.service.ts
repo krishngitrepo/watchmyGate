@@ -37,6 +37,7 @@ import { money, toDbString, ZERO } from "@watchmygate/money";
 import { loadConfig } from "../../common/config.js";
 import { ConflictError, NotFoundError, ValidationError } from "../../common/errors.js";
 import { currentContext, tx } from "../../common/tenant-context.js";
+import { AuditService } from "../../common/audit.service.js";
 import { LedgerService } from "../ledger/ledger.service.js";
 
 export interface AdvanceSweep {
@@ -69,7 +70,10 @@ export interface RecordPaymentInput {
 export class PaymentsService {
   private readonly config = loadConfig();
 
-  constructor(private readonly ledger: LedgerService) {}
+  constructor(
+    private readonly ledger: LedgerService,
+    private readonly audit: AuditService,
+  ) {}
 
   // ------------------------------------------------------------ destinations
 
@@ -297,6 +301,21 @@ export class PaymentsService {
         .update(schema.receipts)
         .set({ journalEntryId: entry.id, updatedAt: new Date() })
         .where(eq(schema.receipts.id, receiptId));
+
+      // Money recorded outside the gateway is an accountant asserting they saw it. Who
+      // asserted it, and when, is the first question if the bank statement disagrees.
+      await this.audit.record(db, {
+        action: "receipt.recorded",
+        entityType: "receipt",
+        entityId: receiptId,
+        after: {
+          receiptNumber,
+          amount: toDbString(amount),
+          method: input.method,
+          reference: input.providerPaymentId ?? null,
+          allocated: toDbString(allocated),
+        },
+      });
 
       return {
         id: receiptId,
@@ -539,6 +558,19 @@ export class PaymentsService {
           if (amount.gte(due)) settled.add(invoice.id);
           touched.add(credit.unitId);
         }
+      }
+
+      if (!applied.isZero()) {
+        await this.audit.record(db, {
+          action: "credit.applied",
+          entityType: "unit",
+          ...(unitId ? { entityId: unitId } : {}),
+          after: {
+            applied: toDbString(applied),
+            invoicesSettled: settled.size,
+            unitsTouched: touched.size,
+          },
+        });
       }
 
       return {

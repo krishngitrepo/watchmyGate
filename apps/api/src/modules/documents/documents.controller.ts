@@ -27,6 +27,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { ForbiddenError, NotFoundError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { StorageService } from "../../common/storage.service.js";
 import { currentContext, hasRole, tx } from "../../common/tenant-context.js";
 
@@ -74,7 +75,10 @@ function rowsOf<T>(result: unknown): T[] {
 
 @Controller("v1/documents")
 export class DocumentsController {
-  constructor(private readonly storage: StorageService) {}
+  constructor(
+    private readonly storage: StorageService,
+    private readonly audit: AuditService,
+  ) {}
 
   /**
    * What this caller may see.
@@ -284,6 +288,15 @@ export class DocumentsController {
     await this.mustExist(id);
 
     return tx(async (db) => {
+      // Logged before the delete, so the entry survives the row it describes. The
+      // repository tolerates removal on purpose; what it must not tolerate is a document
+      // disappearing with no record that it ever existed.
+      await this.audit.record(db, {
+        action: "document.removed",
+        entityType: "document",
+        entityId: id,
+        before: { id },
+      });
       await db.execute(sql`DELETE FROM documents WHERE id = ${id}`);
       return { status: "removed" };
     });

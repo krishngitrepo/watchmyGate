@@ -27,6 +27,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { ConflictError, ForbiddenError, NotFoundError } from "../../common/errors.js";
+import { AuditService } from "../../common/audit.service.js";
 import { currentContext, hasRole, isStaff, tx } from "../../common/tenant-context.js";
 
 /**
@@ -99,6 +100,8 @@ function rowsOf<T>(result: unknown): T[] {
 
 @Controller("v1/assets")
 export class AssetsController {
+  constructor(private readonly audit: AuditService) {}
+
   /**
    * The register.
    *
@@ -451,6 +454,16 @@ export class AssetsController {
       await db.execute(sql`
         DELETE FROM asset_maintenance WHERE asset_id = ${id} AND completed_on IS NULL
       `);
+
+      // What the society used to own, and on whose word it stopped owning it.
+      await this.audit.record(db, {
+        action: "asset.disposed",
+        entityType: "asset",
+        entityId: id,
+        after: { disposedOn: input.disposedOn },
+        reason: input.note,
+      });
+
       return { status: "disposed" };
     });
   }

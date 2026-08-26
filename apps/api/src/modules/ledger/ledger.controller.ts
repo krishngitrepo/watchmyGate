@@ -11,7 +11,7 @@
  * write path would defeat the point of having the role at all.
  */
 
-import { Body, Controller, Get, Header, Param, Post, Query } from "@nestjs/common";
+import { Body, Controller, Delete, Get, Header, Param, Post, Query } from "@nestjs/common";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -207,6 +207,11 @@ export class LedgerController {
     return this.budgets.approve(id, input.resolutionRef);
   }
 
+  @Delete("budgets/:id")
+  async discardBudget(@Param("id") id: string) {
+    return this.budgets.discard(id);
+  }
+
   @Post("budgets/:id/revise")
   async reviseBudget(@Param("id") id: string) {
     return this.budgets.revise(id);
@@ -273,8 +278,9 @@ export class LedgerController {
     }
 
     // (requestedBy, approvedBy) — the service refuses if they are the same person, and
-    // the reason travels in the request body, which the audit middleware records.
-    await this.ledger.reopenPeriod(id, personId!, input.approvedByPersonId);
+    // writes both names and the stated reason to the audit log in the same transaction
+    // as the reopening itself.
+    await this.ledger.reopenPeriod(id, personId!, input.approvedByPersonId, input.reason);
     return { status: "reopened", reason: input.reason };
   }
 

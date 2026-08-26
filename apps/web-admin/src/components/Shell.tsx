@@ -77,6 +77,10 @@ const SECTIONS: {
   {
     group: "Setup",
     pages: [
+      // Not committee-gated either: a person may always read what was done in their own
+      // name, which is the shape DPDP section 11 exists to guarantee. The endpoint
+      // narrows a resident to their own entries.
+      { href: "/audit/", label: "Audit Log" },
       // Not admin-gated. Everyone has statutory rights over their own data, and a
       // privacy page a resident cannot open is a privacy page that protects nobody.
       { href: "/privacy/", label: "Privacy" },
